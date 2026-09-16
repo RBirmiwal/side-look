@@ -1,0 +1,10 @@
+rasterio>=1.4
+geopandas>=1.0
+shapely>=2.0
+pyproj>=3.6
+pyogrio>=0.9
+numpy>=1.26
+scipy>=1.11
+pillow>=10.0
+matplotlib>=3.8
+pytest>=8.0
