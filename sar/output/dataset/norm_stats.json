@@ -1,0 +1,9 @@
+{
+  "bands": ["HH", "HV", "VH", "VV"],
+  "mean": [-11.201660569591871, -14.125866999514109, -13.484007740767755, -10.770859608762258],
+  "std": [5.090548534790973, 2.909196483662227, 3.3557831970749117, 5.098917102632651],
+  "n_pixels": 100401152,
+  "split": "train",
+  "note": "computed after log-domain conversion; apply in the training loop",
+  "log_kind": "db"
+}
