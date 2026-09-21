@@ -1,0 +1,218 @@
+{
+  "strip": {
+    "name": "SN6_AOI_11_Rotterdam_SAR-MAG-POL_20190804111224_20190804111453.tif",
+    "key": "20190804111224_20190804111453",
+    "crs": "EPSG:32631",
+    "transform": [
+      0.25,
+      0.0,
+      592317.4837528648,
+      0.0,
+      -0.25,
+      5749906.311398174
+    ],
+    "shape": [
+      2829,
+      42724
+    ],
+    "dtype": "float32",
+    "bands": 6,
+    "bounds": [
+      592317.4837528648,
+      5749199.061398174,
+      602998.4837528648,
+      5749906.311398174
+    ],
+    "gsd_m": 0.25,
+    "orientation_flag": 1,
+    "orientation_label": "south-facing",
+    "look_azimuth_deg": 180.0,
+    "recorded_look_azimuth_deg": 180.0,
+    "incidence_deg": 53.0,
+    "metadata_incidence_deg": 33.6155957963679
+  },
+  "dsm": {
+    "source": "AHN DSM (PDOK WCS dsm_05m), resampled to 1 m",
+    "crs_native": "EPSG:28992",
+    "crs_matched_to_sar": "EPSG:32631",
+    "posting_m": 1.0,
+    "height_min_m": -5.12,
+    "height_max_m": 98.53,
+    "height_median_m": 3.31,
+    "nodata_filled": true,
+    "assumption": "far-field: one incidence angle for the entire array"
+  },
+  "footprints": {
+    "source": "3DBAG v20250903 lod12_2d + pand",
+    "crs_loaded": "EPSG:7415",
+    "crs_mandatory": "EPSG:28992",
+    "crs_matched_to_sar": "EPSG:32631",
+    "feature_count_used": 6735,
+    "height_column": "height_m = b3_h_50p - b3_h_maaiveld",
+    "height_min_m": 0.5,
+    "height_max_m": 69.42,
+    "height_median_m": 8.44
+  },
+  "mask": {
+    "path": "sar/output/layover_shadow_mask_dsm.tif",
+    "codes": {
+      "0": "nominal",
+      "1": "active layover",
+      "2": "passive layover",
+      "3": "shadow"
+    },
+    "active_px": 8444096,
+    "passive_px": 4672604,
+    "shadow_px": 19506796,
+    "layover_px": 13116700,
+    "box_model_path": "sar/output/layover_shadow_mask.tif",
+    "precedence": "shadow overwrites layover"
+  },
+  "how_to_flip": {
+    "cli": "python dsm_pipeline.py --flip-look",
+    "or": "python dsm_pipeline.py --look-azimuth 0   # this strip is south-facing (180)",
+    "note": "If active layover (copper) sits on the far side of each building instead of toward the sensor, the look azimuth is 180\u00b0 off. Toggle Flip look in the viewer or rerun with --flip-look. Toggle Box model to compare against the 3DBAG extrusion mask."
+  },
+  "crops": [
+    {
+      "id": "crop-a",
+      "title": "West block",
+      "bounds": [
+        600673.484,
+        5749372.686,
+        601033.484,
+        5749732.686
+      ],
+      "building_count": 678,
+      "max_height_m": 15.41,
+      "median_height_m": 7.7,
+      "files": {
+        "overlay": "/overlays/crop-a-dsm.png",
+        "flipped": "/overlays/crop-a-dsm-flipped.png",
+        "sar": "/overlays/crop-a-sar.png",
+        "box": "/overlays/crop-a.png",
+        "box_flipped": "/overlays/crop-a-flipped.png",
+        "inc_meta": "/overlays/crop-a-dsm-inc-meta.png",
+        "box_inc_meta": "/overlays/crop-a-inc-meta.png"
+      },
+      "stats": {
+        "window": [
+          33424,
+          694,
+          1440,
+          1440
+        ],
+        "active_px": 257312,
+        "passive_px": 131856,
+        "shadow_px": 564776,
+        "layover_px": 389168,
+        "buildings": 678
+      }
+    },
+    {
+      "id": "crop-b",
+      "title": "Mid-west block",
+      "bounds": [
+        601069.484,
+        5749372.686,
+        601429.484,
+        5749732.686
+      ],
+      "building_count": 398,
+      "max_height_m": 43.9,
+      "median_height_m": 9.84,
+      "files": {
+        "overlay": "/overlays/crop-b-dsm.png",
+        "flipped": "/overlays/crop-b-dsm-flipped.png",
+        "sar": "/overlays/crop-b-sar.png",
+        "box": "/overlays/crop-b.png",
+        "box_flipped": "/overlays/crop-b-flipped.png",
+        "inc_meta": "/overlays/crop-b-dsm-inc-meta.png",
+        "box_inc_meta": "/overlays/crop-b-inc-meta.png"
+      },
+      "stats": {
+        "window": [
+          35008,
+          694,
+          1440,
+          1440
+        ],
+        "active_px": 196416,
+        "passive_px": 95592,
+        "shadow_px": 497904,
+        "layover_px": 292008,
+        "buildings": 398
+      }
+    },
+    {
+      "id": "crop-c",
+      "title": "Mid-east block",
+      "bounds": [
+        601663.484,
+        5749372.686,
+        602023.484,
+        5749732.686
+      ],
+      "building_count": 511,
+      "max_height_m": 12.83,
+      "median_height_m": 8.6,
+      "files": {
+        "overlay": "/overlays/crop-c-dsm.png",
+        "flipped": "/overlays/crop-c-dsm-flipped.png",
+        "sar": "/overlays/crop-c-sar.png",
+        "box": "/overlays/crop-c.png",
+        "box_flipped": "/overlays/crop-c-flipped.png",
+        "inc_meta": "/overlays/crop-c-dsm-inc-meta.png",
+        "box_inc_meta": "/overlays/crop-c-inc-meta.png"
+      },
+      "stats": {
+        "window": [
+          37384,
+          694,
+          1440,
+          1440
+        ],
+        "active_px": 300608,
+        "passive_px": 157168,
+        "shadow_px": 598704,
+        "layover_px": 457776,
+        "buildings": 511
+      }
+    },
+    {
+      "id": "crop-d",
+      "title": "East block",
+      "bounds": [
+        602059.484,
+        5749372.686,
+        602419.484,
+        5749732.686
+      ],
+      "building_count": 308,
+      "max_height_m": 19.71,
+      "median_height_m": 10.48,
+      "files": {
+        "overlay": "/overlays/crop-d-dsm.png",
+        "flipped": "/overlays/crop-d-dsm-flipped.png",
+        "sar": "/overlays/crop-d-sar.png",
+        "box": "/overlays/crop-d.png",
+        "box_flipped": "/overlays/crop-d-flipped.png",
+        "inc_meta": "/overlays/crop-d-dsm-inc-meta.png",
+        "box_inc_meta": "/overlays/crop-d-inc-meta.png"
+      },
+      "stats": {
+        "window": [
+          38968,
+          694,
+          1440,
+          1440
+        ],
+        "active_px": 278216,
+        "passive_px": 133816,
+        "shadow_px": 578224,
+        "layover_px": 412032,
+        "buildings": 308
+      }
+    }
+  ]
+}

@@ -1,6 +1,12 @@
-"""Geographic block assignment. Not random, not by strip."""
+"""Geographic block assignment. Not random, not by strip.
+
+SpaceNet 6 strips overlap: the same building is in many collects. A tile
+belongs to the 1 km block that contains its centre. Tiles that straddle a
+block edge are discarded so a train tile cannot leak across the cut.
+"""
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 
@@ -22,21 +28,31 @@ class BlockGrid:
         return (west, south, west + self.size, south + self.size)
 
     def straddles(self, west: float, south: float, east: float, north: float) -> bool:
-        corners = ((west, south), (east, south), (west, north), (east, north))
-        return len({self.block_id(x, y) for x, y in corners}) > 1
+        corners = (
+            (west, south),
+            (east, south),
+            (west, north),
+            (east, north),
+        )
+        ids = {self.block_id(x, y) for x, y in corners}
+        return len(ids) > 1
 
 
-def assign_blocks(blocks, ratios=(0.70, 0.15, 0.15)):
+def assign_blocks(
+    blocks: list[tuple[int, int]],
+    ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
+) -> dict[tuple[int, int], str]:
+    """West→east: train, then val, then test, by block count ≈ area."""
     if not blocks:
         return {}
-    ordered = sorted(blocks)
+    ordered = sorted(blocks)  # ix, iy — west to east, then south to north
     n = len(ordered)
     n_train = max(1, int(round(n * ratios[0])))
     n_val = max(0, int(round(n * ratios[1])))
     if n_train + n_val >= n and n > 1:
         n_val = max(0, n - n_train - 1)
     n_train = min(n_train, n - (1 if n > 1 else 0))
-    mapping = {}
+    mapping: dict[tuple[int, int], str] = {}
     for i, block in enumerate(ordered):
         if i < n_train:
             mapping[block] = "train"
@@ -47,11 +63,17 @@ def assign_blocks(blocks, ratios=(0.70, 0.15, 0.15)):
     return mapping
 
 
-def bboxes_intersect(a, b):
+def bboxes_intersect(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+) -> bool:
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
-def assert_no_train_test_overlap(train, test):
+def assert_no_train_test_overlap(
+    train: list[tuple[float, float, float, float]],
+    test: list[tuple[float, float, float, float]],
+) -> None:
     for tb in train:
         for ub in test:
             if bboxes_intersect(tb, ub):

@@ -1,0 +1,12 @@
+data/*.tif
+data/3dbag/*.gpkg
+data/3dbag/*.gpkg.gz
+output/masks/
+output/dataset/train/
+output/dataset/val/
+output/dataset/test/
+output/*.tif
+__pycache__/
+.pytest_cache/
+*.pyc
+*.npz

@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+# Exact path in the Capella product JSON (the *_extended.json contents).
 INCIDENCE_PATH = ("collect", "image", "center_pixel", "incidence_angle")
 INCIDENCE_FIELD = "collect.image.center_pixel.incidence_angle"
+
 _FROM_HORIZONTAL = ("grazing", "elevation", "depression")
 
 
@@ -25,6 +27,11 @@ def _dig(obj: Any, path: tuple[str, ...]) -> Any:
 
 
 def parse_incidence(meta: dict) -> dict:
+    """Return field name, raw value, theta-from-vertical, and the 90-x pair.
+
+    Fails loudly if the field is missing — a guessed angle silently poisons
+    every mask in the dataset.
+    """
     raw = _dig(meta, INCIDENCE_PATH)
     try:
         value = float(raw)
@@ -32,6 +39,7 @@ def parse_incidence(meta: dict) -> dict:
         raise ValueError(f"{INCIDENCE_FIELD} is not a number: {raw!r}") from exc
     if not (0.0 < value < 90.0):
         raise ValueError(f"{INCIDENCE_FIELD} out of (0, 90): {value}")
+
     leaf = INCIDENCE_PATH[-1].lower()
     from_horizontal = any(token in leaf for token in _FROM_HORIZONTAL)
     if from_horizontal:
@@ -40,6 +48,7 @@ def parse_incidence(meta: dict) -> dict:
     else:
         theta = value
         convention = "vertical (field is named incidence, not grazing)"
+
     return {
         "field": INCIDENCE_FIELD,
         "raw_value_deg": value,

@@ -1,20 +1,26 @@
 .venv/
 __pycache__/
-*.pyc
 .pytest_cache/
+*.pyc
+.DS_Store
+.env
+node_modules/
+dist/
+.output/
+*.zip
+
+# Raw SAR / DSM / 3DBAG — re-download from public S3 and PDOK
 *.tif
 *.tiff
-*.npz
-*.zip
+*.gpkg
+*.gpkg.gz
 sar/data/*.tif
 sar/data/3dbag/
-sar/output/masks/
+
+# Tiles live on Hugging Face, not GitHub
+*.npz
 sar/output/dataset/train/
 sar/output/dataset/val/
 sar/output/dataset/test/
 sar/output/dataset/samples/
-node_modules/
-dist/
-.output/
-.env
-.DS_Store
+sar/output/masks/
