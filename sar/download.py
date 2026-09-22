@@ -14,7 +14,9 @@ import argparse
 import gzip
 import json
 import math
+import os
 import shutil
+import ssl
 import subprocess
 import tempfile
 import urllib.request
@@ -77,6 +79,36 @@ def download_strip(strip_id: str, dest: Path | None = None) -> Path:
     return dest
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """Honor corp SSL inspection (Zscaler etc.).
+
+    SIDE_LOOK_INSECURE_SSL=1  skip verify (lab laptop MITM)
+    SSL_CERT_FILE / REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE  custom CA pem
+    """
+    flag = os.environ.get("SIDE_LOOK_INSECURE_SSL", "").strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        print("WARNING: SIDE_LOOK_INSECURE_SSL=1 — TLS certificate verify off")
+        return ssl._create_unverified_context()
+    ca = (
+        os.environ.get("SSL_CERT_FILE")
+        or os.environ.get("REQUESTS_CA_BUNDLE")
+        or os.environ.get("CURL_CA_BUNDLE")
+    )
+    if ca:
+        print(f"TLS CA {ca}")
+        return ssl.create_default_context(cafile=ca)
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
+def _urlopen(req: urllib.request.Request, timeout: int = 120):
+    return urllib.request.urlopen(req, timeout=timeout, context=_ssl_context())
+
+
 def fetch(url: str, dest: Path, timeout: int = 120) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and dest.stat().st_size > 0:
@@ -84,7 +116,7 @@ def fetch(url: str, dest: Path, timeout: int = 120) -> None:
         return
     print(f"GET {url}")
     req = urllib.request.Request(url, headers={"User-Agent": AHN_USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as src, dest.open("wb") as out:
+    with _urlopen(req, timeout=timeout) as src, dest.open("wb") as out:
         shutil.copyfileobj(src, out)
 
 
@@ -153,7 +185,7 @@ def _wcs_chunk(bbox: tuple[float, float, float, float], dest: Path) -> None:
     )
     print(f"WCS DSM {width}x{height}  bbox=({xmin:.1f},{ymin:.1f},{xmax:.1f},{ymax:.1f})")
     req = urllib.request.Request(url, headers={"User-Agent": AHN_USER_AGENT})
-    with urllib.request.urlopen(req, timeout=180) as src:
+    with _urlopen(req, timeout=180) as src:
         data = src.read()
         ctype = src.headers.get("Content-Type", "")
     if b"<Exception" in data[:400] or b"<ServiceException" in data[:400] or "xml" in ctype.lower():
