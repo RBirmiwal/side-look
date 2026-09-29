@@ -78,7 +78,18 @@ Squint in the JSON (0.99° and 1.34°) does not equal that offset. The right-loo
 
 ## Incidence is not constant across the strip
 
-Capella stores no edge target. Near and far range below are the two ends of the short image axis at mid-azimuth (the range direction: 707 m and 801 m on the ground), converted to ECEF at the center target’s ellipsoid height. Incidence is from the center-time platform.
+Capella stores no edge target. The GeoTIFF affine on both strips is exactly 0.25 m in both axes (axis-aligned). The product JSON quotes 0.25008 m and 0.25017 m; the raster the mask is painted on is 0.25 m.
+
+The short axis is range. Its length is the full swath, not a distance from the centre:
+
+| strip | pixels (row × col) | row spacing | col spacing | range swath (rows) | along-track (cols) |
+|---|---:|---:|---:|---:|---:|
+| `20190804111224…` | 2829 × 42724 | 0.25 m | 0.25 m | **707.25 m** | 10.68 km |
+| `20190822074237…` | 3204 × 47260 | 0.25 m | 0.25 m | **801.00 m** | 11.82 km |
+
+Half of that swath is the distance from the centre line to each edge: about 354 m and 400 m. The 707 m and 801 m figures are the full near-to-far widths. They match DATASET.md (~3k px × 0.25 m ≈ 750 m). They are not a 1.5 km swath.
+
+Near and far below are the two ends of that short axis at mid-azimuth, converted to ECEF at the centre target’s ellipsoid height. Incidence is from the centre-time platform.
 
 | strip | near | center field | far | spread |
 |---|---:|---:|---:|---:|

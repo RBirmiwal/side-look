@@ -10,7 +10,8 @@ parameters only — SAR brightness never enters the labels.
     python dataset.py --strips ID ID       # named strips (local files or --fetch-sar)
     python dataset.py --max-strips 12      # geographic sample
     python dataset.py --masks-only         # cache fold-test masks for all 202
-    python dataset.py                      # tile every strip that is on disk / fetchable
+    python dataset.py --theta-mode complement --strips ID --masks-only --mask-dir output/masks_theta_complement
+    python dataset.py --theta-mode complement --strips ID --out-dir output/dataset_theta_complement
 """
 
 from __future__ import annotations
@@ -257,25 +258,100 @@ def write_mask_geotiff(path: Path, mask: np.ndarray, row: dict) -> None:
             look_azimuth_deg=str(row["look_azimuth_deg"]),
             orientation_flag=str(row["orientation_flag"]),
             incidence_field=row["incidence_field"],
+            theta_mode=str(row.get("theta_mode", "as-read")),
+            theta_read_deg=str(row.get("theta_read_deg", row["incidence_deg"])),
         )
+
+
+def resolve_theta(raw_deg: float, mode: str) -> float:
+    """Incidence actually passed to the fold-test. Look azimuth is untouched."""
+    raw = float(raw_deg)
+    if mode == "as-read":
+        used = raw
+    elif mode == "complement":
+        used = 90.0 - raw
+    else:
+        raise ValueError(f"theta-mode must be as-read or complement, got {mode!r}")
+    if not (0.0 < used < 90.0):
+        raise ValueError(f"theta {used} out of (0, 90) for mode {mode} raw {raw}")
+    return used
+
+
+def apply_theta_mode(row: dict, mode: str) -> dict:
+    """Copy of the catalog row with incidence_deg set to the theta that will be used."""
+    out = dict(row)
+    raw = float(row["incidence_deg"])
+    used = resolve_theta(raw, mode)
+    out["theta_read_deg"] = raw
+    out["theta_mode"] = mode
+    out["incidence_deg"] = used
+    log(
+        f"  theta {row['strip_id']}  mode={mode}  "
+        f"read={raw:.3f}°  used={used:.3f}°  "
+        f"look={row['look_azimuth_deg']:.0f}°"
+    )
+    return out
+
+
+def apply_look_override(row: dict, look_azimuth: float | None) -> dict:
+    """Override look azimuth only. Orientation flag and canonicalise are unchanged."""
+    if look_azimuth is None:
+        return row
+    out = dict(row)
+    out["look_read_deg"] = float(row["look_azimuth_deg"])
+    out["look_azimuth_deg"] = float(look_azimuth)
+    log(
+        f"  look {row['strip_id']}  read={out['look_read_deg']:.0f}°  "
+        f"used={out['look_azimuth_deg']:.0f}°  ori={row['orientation_flag']} (unchanged)"
+    )
+    return out
+
+
+def _cached_tag(path: Path, key: str) -> float | None:
+    with rasterio.open(path) as src:
+        raw = src.tags().get(key)
+    if raw is None or raw == "":
+        return None
+    return float(raw)
 
 
 def generate_mask(row: dict, ahn_path: Path, cache_dir: Path) -> tuple[Path, np.ndarray, np.ndarray]:
     """DSM + incidence + look azimuth. Never reads SAR pixels."""
     path = cache_dir / f"{row['strip_id']}.tif"
     valid_path = cache_dir / f"{row['strip_id']}_valid.tif"
-    if path.exists() and valid_path.exists():
+    used = float(row["incidence_deg"])
+    mode = row.get("theta_mode", "as-read")
+    cache_ok = path.exists() and valid_path.exists()
+    if cache_ok:
+        cached = _cached_tag(path, "incidence_deg")
+        cached_look = _cached_tag(path, "look_azimuth_deg")
+        look = float(row["look_azimuth_deg"])
+        theta_bad = cached is not None and abs(cached - used) > 1e-3
+        look_bad = cached_look is not None and abs(cached_look - look) > 1e-3
+        if theta_bad or look_bad:
+            log(
+                f"  mask cache stale {row['strip_id']}  "
+                f"cached θ={cached} look={cached_look}  "
+                f"used θ={used:.3f}° look={look:.0f}°  rebuilding"
+            )
+            cache_ok = False
+    if cache_ok:
+        log(
+            f"  mask cache {row['strip_id']}  mode={mode}  θ_used={used:.3f}°  "
+            f"look={row['look_azimuth_deg']:.0f}°  ori={row['orientation_flag']}"
+        )
         with rasterio.open(path) as src:
             mask = src.read(1)
         with rasterio.open(valid_path) as src:
             valid = src.read(1).astype(bool)
         return path, mask, valid
     log(
-        f"  mask {row['strip_id']}  θ={row['incidence_deg']:.3f}°  "
+        f"  mask {row['strip_id']}  mode={mode}  θ_used={used:.3f}°  "
+        f"θ_read={float(row.get('theta_read_deg', used)):.3f}°  "
         f"look={row['look_azimuth_deg']:.0f}°  ori={row['orientation_flag']}"
     )
     z, valid_1m, t_1m = prepare_dsm_for_strip(ahn_path, row)
-    mask_1m = mask_from_dsm(z, row["incidence_deg"], row["look_azimuth_deg"], DSM_POSTING)
+    mask_1m = mask_from_dsm(z, used, row["look_azimuth_deg"], DSM_POSTING)
     mask = warp_to_strip(mask_1m, t_1m, row["crs"], row, Resampling.nearest, np.uint8)
     valid = warp_to_strip(
         valid_1m.astype(np.uint8), t_1m, row["crs"], row, Resampling.nearest, np.uint8
@@ -589,7 +665,9 @@ def write_one_tile(rec: dict, row: dict, set_dir: Path) -> dict:
                     "flipped": rec["flipped"],
                     "incidence_deg": row["incidence_deg"],
                     "incidence_field": row["incidence_field"],
-                    "incidence_raw_deg": row["incidence_raw_deg"],
+                    "incidence_raw_deg": row.get("theta_read_deg", row["incidence_raw_deg"]),
+                    "theta_mode": row.get("theta_mode", "as-read"),
+                    "theta_read_deg": row.get("theta_read_deg", row["incidence_deg"]),
                 }
             )
         ),
@@ -656,6 +734,7 @@ def process_strip_tiles(
     set_dir: Path,
     norm: RunningNorm,
     cap_zero: float = 1.0,
+    flip_override: bool | None = None,
 ) -> tuple[list[dict], dict[str, int], str]:
     dropped = {"sar_nodata": 0, "dsm_nodata": 0, "block_boundary": 0, "zero_layover": 0, "no_split": 0}
     kept: list[dict] = []
@@ -696,7 +775,10 @@ def process_strip_tiles(
                 v = valid_slab[:, c : c + TILE_SIZE]
                 img, kind = log_scale(img)
                 log_kind = kind
-                img, m, flipped = canonicalise(img, m, row["orientation_flag"], canonicalise_flag)
+                if flip_override is None:
+                    img, m, flipped = canonicalise(img, m, row["orientation_flag"], canonicalise_flag)
+                else:
+                    img, m, flipped = canonicalise(img, m, 1 if flip_override else 0, True)
                 reason = drop_reason(img, m, v, cap_zero=1.0)
                 if reason:
                     dropped[reason] += 1
@@ -860,39 +942,73 @@ def write_masks_index(cache_dir: Path, rows: list[dict]) -> None:
             )
 
 
-def generate_all_masks(rows: list[dict], ahn_path: Path) -> int:
+def generate_all_masks(rows: list[dict], ahn_path: Path, cache_dir: Path | None = None) -> int:
     import gc
 
-    MASK_DIR.mkdir(parents=True, exist_ok=True)
+    cache_dir = cache_dir or MASK_DIR
+    cache_dir.mkdir(parents=True, exist_ok=True)
     n = 0
     for i, row in enumerate(rows, 1):
         log(f"=== mask {i}/{len(rows)} {row['strip_id']} ===")
         try:
-            generate_mask(row, ahn_path, MASK_DIR)
+            generate_mask(row, ahn_path, cache_dir)
             n += 1
         except Exception as exc:
             log(f"  SKIP mask {row['strip_id']}: {exc}")
         gc.collect()
         if i % 5 == 0 or i == len(rows):
-            write_masks_index(MASK_DIR, rows)
-    write_masks_index(MASK_DIR, rows)
-    log(f"=== masks cached {n}/{len(rows)} in {MASK_DIR} ===")
-    bundled = ROOT.parent / "src" / "lib" / "dataset-report.json"
-    if bundled.exists():
-        data = json.loads(bundled.read_text())
-        data["n_masks"] = n
-        bundled.write_text(json.dumps(data, indent=2))
+            write_masks_index(cache_dir, rows)
+    write_masks_index(cache_dir, rows)
+    log(f"=== masks cached {n}/{len(rows)} in {cache_dir} ===")
+    if cache_dir.resolve() == MASK_DIR.resolve():
+        bundled = ROOT.parent / "src" / "lib" / "dataset-report.json"
+        if bundled.exists():
+            data = json.loads(bundled.read_text())
+            data["n_masks"] = n
+            bundled.write_text(json.dumps(data, indent=2))
     return n
+
+
+def _covered_blocks(grid: BlockGrid, rows: list[dict]) -> set[tuple[int, int]]:
+    covered: set[tuple[int, int]] = set()
+    for r in rows:
+        b = r["bounds"]
+        ix0, iy0 = grid.block_id(b[0] + 1, b[1] + 1)
+        ix1, iy1 = grid.block_id(b[2] - 1, b[3] - 1)
+        for ix in range(min(ix0, ix1), max(ix0, ix1) + 1):
+            for iy in range(min(iy0, iy1), max(iy0, iy1) + 1):
+                covered.add((ix, iy))
+    return covered
 
 
 def run(args: argparse.Namespace) -> None:
     rows = load_catalog()
     picked = select_strips(rows, args.one_strip, args.max_strips, args.strips)
-    log(f"=== strips {len(picked)} / {len(rows)}  canonicalise={args.canonicalise} ===")
-    for r in picked:
-        log(
-            f"  {r['strip_id']}  ori={r['orientation_flag']} look={r['look_azimuth_deg']:.0f} "
-            f"θ={r['incidence_deg']:.3f}° field={r['incidence_field']}"
+    mode = args.theta_mode
+    picked = [apply_theta_mode(r, mode) for r in picked]
+    picked = [apply_look_override(r, args.look_azimuth) for r in picked]
+    log(
+        f"=== strips {len(picked)} / {len(rows)}  canonicalise={args.canonicalise}  "
+        f"theta-mode={mode} ==="
+    )
+
+    set_dir = Path(args.out_dir) if args.out_dir else SET_DIR
+    if not set_dir.is_absolute():
+        set_dir = (ROOT / set_dir).resolve()
+    mask_dir = Path(args.mask_dir) if args.mask_dir else MASK_DIR
+    if not mask_dir.is_absolute():
+        mask_dir = (ROOT / mask_dir).resolve()
+    if mode != "as-read" and mask_dir.resolve() == MASK_DIR.resolve():
+        raise SystemExit(
+            "refusing to overwrite as-read masks in output/masks; pass --mask-dir"
+        )
+    if args.look_azimuth is not None and mask_dir.resolve() == MASK_DIR.resolve():
+        raise SystemExit(
+            "refusing to overwrite output/masks when --look-azimuth is set; pass --mask-dir"
+        )
+    if (mode != "as-read" or args.look_azimuth is not None) and set_dir.resolve() == SET_DIR.resolve() and not args.masks_only:
+        raise SystemExit(
+            "refusing to overwrite output/dataset; pass --out-dir"
         )
 
     ahn_path = Path(args.dsm) if args.dsm else default_dsm()
@@ -901,32 +1017,37 @@ def run(args: argparse.Namespace) -> None:
     log(f"  dsm {ahn_path}")
 
     if args.masks_only:
-        generate_all_masks(picked, ahn_path)
+        generate_all_masks(picked, ahn_path, mask_dir)
         return
 
-    west, south, east, north = union_bounds(picked)
+    grid_rows = list(picked)
+    if args.grid_strips:
+        extra = select_strips(rows, False, None, args.grid_strips)
+        have = {r["strip_id"] for r in grid_rows}
+        for r in extra:
+            if r["strip_id"] not in have:
+                grid_rows.append(r)
+                log(f"  grid-only {r['strip_id']} (not tiled, theta unchanged)")
+    west, south, east, north = union_bounds(grid_rows)
     grid = BlockGrid(
         origin_x=math.floor(west / BLOCK_M) * BLOCK_M,
         origin_y=math.floor(south / BLOCK_M) * BLOCK_M,
         size=BLOCK_M,
     )
-    covered = set()
-    for r in picked:
-        b = r["bounds"]
-        ix0, iy0 = grid.block_id(b[0] + 1, b[1] + 1)
-        ix1, iy1 = grid.block_id(b[2] - 1, b[3] - 1)
-        for ix in range(min(ix0, ix1), max(ix0, ix1) + 1):
-            for iy in range(min(iy0, iy1), max(iy0, iy1) + 1):
-                covered.add((ix, iy))
-    block_split = assign_blocks(sorted(covered), (args.train_frac, args.val_frac, args.test_frac))
+    block_split = assign_blocks(
+        sorted(_covered_blocks(grid, grid_rows)),
+        (args.train_frac, args.val_frac, args.test_frac),
+    )
     log(
         f"  blocks {len(block_split)}  "
         + ", ".join(f"{s}={sum(v == s for v in block_split.values())}" for s in ("train", "val", "test"))
     )
+    log(f"  out {set_dir}")
+    log(f"  masks {mask_dir}")
 
-    MASK_DIR.mkdir(parents=True, exist_ok=True)
-    SET_DIR.mkdir(parents=True, exist_ok=True)
-    reset_tile_dir(SET_DIR)
+    mask_dir.mkdir(parents=True, exist_ok=True)
+    set_dir.mkdir(parents=True, exist_ok=True)
+    reset_tile_dir(set_dir)
     all_tiles: list[dict] = []
     dropped_total = {"sar_nodata": 0, "dsm_nodata": 0, "block_boundary": 0, "zero_layover": 0, "no_split": 0}
     log_kind = "db"
@@ -936,15 +1057,15 @@ def run(args: argparse.Namespace) -> None:
     n_masks = 0
 
     for i, row in enumerate(picked, 1):
-        if args.disk_budget_gb and disk_used_gb(SET_DIR) >= args.disk_budget_gb:
+        if args.disk_budget_gb and disk_used_gb(set_dir) >= args.disk_budget_gb:
             log(f"  disk budget {args.disk_budget_gb} GB reached, stopping")
             break
         log(f"=== {i}/{len(picked)} {row['strip_id']} ===")
         ensure_strip(row["strip_id"], fetch=args.fetch_sar)
-        _, mask, valid = generate_mask(row, ahn_path, MASK_DIR)
+        _, mask, valid = generate_mask(row, ahn_path, mask_dir)
         n_masks += 1
         tiles, dropped, kind = process_strip_tiles(
-            row, mask, valid, grid, block_split, args.canonicalise, SET_DIR, norm, cap_zero=1.0
+            row, mask, valid, grid, block_split, args.canonicalise, set_dir, norm, cap_zero=1.0
         )
         del mask, valid
         log_kind = kind
@@ -976,9 +1097,11 @@ def run(args: argparse.Namespace) -> None:
                 "orientation_flag": row["orientation_flag"],
                 "look_azimuth_deg": row["look_azimuth_deg"],
                 "incidence_deg": row["incidence_deg"],
+                "theta_mode": row.get("theta_mode", "as-read"),
+                "theta_read_deg": row.get("theta_read_deg", row["incidence_deg"]),
                 "flipped": rec["flipped"],
                 **rec["frac"],
-                "path": str(Path(rec["path"]).relative_to(SET_DIR)),
+                "path": str(Path(rec["path"]).relative_to(set_dir)),
             }
         )
 
@@ -987,7 +1110,7 @@ def run(args: argparse.Namespace) -> None:
     assert_no_train_test_overlap(train_b, test_b)
     log("  train/test bbox overlap: none")
 
-    man_path = SET_DIR / "manifest.csv"
+    man_path = set_dir / "manifest.csv"
     fields = list(manifest[0].keys())
     with man_path.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
@@ -1013,6 +1136,7 @@ def run(args: argparse.Namespace) -> None:
         "incidence_field": picked[0]["incidence_field"],
         "incidence_min": min(r["incidence_deg"] for r in picked),
         "incidence_max": max(r["incidence_deg"] for r in picked),
+        "theta_mode": mode,
         "canonicalise": args.canonicalise,
         "n_strips": len({t["strip_id"] for t in all_tiles}),
         "n_north": sum(1 for r in picked if r["orientation_flag"] == 0),
@@ -1034,6 +1158,8 @@ def run(args: argparse.Namespace) -> None:
                 "orientation_flag": r["orientation_flag"],
                 "look_azimuth_deg": r["look_azimuth_deg"],
                 "incidence_deg": r["incidence_deg"],
+                "theta_read_deg": r.get("theta_read_deg", r["incidence_deg"]),
+                "theta_mode": r.get("theta_mode", "as-read"),
                 "incidence_90_minus_raw_deg": r["incidence_90_minus_raw_deg"],
                 "incidence_field": r["incidence_field"],
             }
@@ -1042,12 +1168,12 @@ def run(args: argparse.Namespace) -> None:
     }
     dumped = norm.dump()
     dumped["log_kind"] = log_kind
-    (SET_DIR / "norm_stats.json").write_text(json.dumps(dumped, indent=2))
-    write_report(stats, SET_DIR / "REPORT.md")
-    plot_split_map(grid, block_split, all_tiles, SET_DIR / "split_map.png")
-    plot_layover_hist(lay, SET_DIR / "layover_hist.png")
-    overlay_meta = render_samples(all_tiles, SET_DIR, n=20)
-    pair = render_canonicalise_pair(all_tiles, SET_DIR)
+    (set_dir / "norm_stats.json").write_text(json.dumps(dumped, indent=2))
+    write_report(stats, set_dir / "REPORT.md")
+    plot_split_map(grid, block_split, all_tiles, set_dir / "split_map.png")
+    plot_layover_hist(lay, set_dir / "layover_hist.png")
+    overlay_meta = render_samples(all_tiles, set_dir, n=20)
+    pair = render_canonicalise_pair(all_tiles, set_dir)
     extra = {
         **stats,
         "norm": dumped,
@@ -1058,9 +1184,12 @@ def run(args: argparse.Namespace) -> None:
         ],
         "canonicalise_pair_on_disk": bool(pair),
     }
-    copy_public(SET_DIR, extra=extra)
+    if set_dir.resolve() == SET_DIR.resolve():
+        copy_public(set_dir, extra=extra)
+    else:
+        log("  skipped public copy (separate output directory)")
     log(f"=== done tiles={sum(counts.values())} {counts} ===")
-    log(f"  {SET_DIR / 'REPORT.md'}")
+    log(f"  {set_dir / 'REPORT.md'}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1077,6 +1206,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--test-frac", type=float, default=0.15)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--masks-only", action="store_true", help="Cache per-strip DSM masks, no tiling.")
+    p.add_argument(
+        "--theta-mode",
+        choices=("as-read", "complement"),
+        default="as-read",
+        help="as-read uses catalog incidence. complement uses 90 - theta.",
+    )
+    p.add_argument(
+        "--look-azimuth",
+        type=float,
+        default=None,
+        help="Override look azimuth (degrees) for the mask only. Orientation flag is not changed.",
+    )
+    p.add_argument("--out-dir", default=None, help="Tile output directory. Default: output/dataset.")
+    p.add_argument(
+        "--mask-dir",
+        default=None,
+        help="DSM mask cache. Required for theta-mode complement so as-read masks are not overwritten.",
+    )
+    p.add_argument(
+        "--grid-strips",
+        nargs="*",
+        default=None,
+        help="Extra strip ids that set the block grid only. They are not masked or tiled.",
+    )
     p.add_argument("--fetch-sar", action="store_true", default=False, help="Download missing MAG-POL from S3.")
     p.add_argument("--release-sar", action="store_true", help="Delete fetched MAG-POL after tiling (keeps the original local strip).")
     p.add_argument("--disk-budget-gb", type=float, default=20.0)
