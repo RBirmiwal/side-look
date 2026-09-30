@@ -8,6 +8,8 @@ import numpy as np
 
 from dsm_geometry import CLASS_ACTIVE, CLASS_PASSIVE, CLASS_SHADOW, scan_range_lines
 from near_field import (
+    canonical_flip,
+    cardinal_look,
     fit_flight_line,
     layover_extent_m,
     look_azimuth_from_track,
@@ -27,6 +29,21 @@ def test_right_look_of_an_eastward_track_is_south():
     direction = np.array([1.0, 0.0, 0.0])
     assert look_azimuth_from_track(direction, "right") == 180.0
     assert look_azimuth_from_track(np.array([0.0, 1.0, 0.0]), "right") == 90.0
+
+
+def test_canonical_flip_puts_the_sensor_on_row_zero():
+    assert canonical_flip(180.0) is False
+    assert canonical_flip(180.18) is False
+    assert canonical_flip(0.0) is True
+    assert canonical_flip(359.6) is True
+
+
+def test_cardinal_look_skips_anything_past_five_degrees():
+    assert cardinal_look(180.4) == 180.0
+    assert cardinal_look(359.2) == 0.0
+    assert cardinal_look(5.0) == 0.0
+    assert cardinal_look(5.1) is None
+    assert cardinal_look(90.0) is None
 
 
 def test_flight_line_residuals_on_a_straight_track():

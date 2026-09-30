@@ -58,7 +58,7 @@ def s3_cp(url: str, dest: Path) -> None:
     if dest.exists() and dest.stat().st_size > 0:
         print(f"exists {dest}")
         return
-    cmd = ["aws", "s3", "cp", url, str(dest), "--no-sign-request"]
+    cmd = ["aws", "s3", "cp", url, str(dest), "--no-sign-request", "--no-progress"]
     print(" ".join(cmd))
     subprocess.check_call(cmd)
 

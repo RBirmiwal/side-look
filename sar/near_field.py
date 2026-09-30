@@ -56,11 +56,36 @@ def look_azimuth_from_track(direction_enu: np.ndarray, pointing: str) -> float:
 
 
 def south_looking(look_azimuth_deg: float) -> bool:
-    """True when the sensor looks nearer south than north. Canonicalise flips these."""
+    """True when the sensor looks nearer south than north."""
     az = look_azimuth_deg % 360.0
     to_south = min(abs(az - 180.0), 360.0 - abs(az - 180.0))
     to_north = min(az, 360.0 - az)
     return to_south < to_north
+
+
+def cardinal_look(look_azimuth_deg: float, tol_deg: float = 5.0) -> float | None:
+    """Snap to 0 or 180 if the look is within `tol_deg`. Otherwise None.
+
+    The mask is scanned on the raster axes. A strip further off than this is
+    skipped instead of bilinear-rotated.
+    """
+    az = float(look_azimuth_deg) % 360.0
+    d0 = min(az, 360.0 - az)
+    d180 = abs(az - 180.0)
+    if min(d0, d180) > tol_deg:
+        return None
+    return 180.0 if d180 < d0 else 0.0
+
+
+def canonical_flip(look_azimuth_deg: float) -> bool:
+    """Flip a north-up tile so the sensor sits on row 0.
+
+    Row 0 is north. A south-looking sensor (look near 180) is already on that
+    edge, and layover points toward it. A north-looking sensor (look near 0)
+    sits on the south edge, so the row axis is flipped. Image, mask, and
+    incidence flip together.
+    """
+    return not south_looking(look_azimuth_deg)
 
 
 def fit_flight_line(positions_enu: np.ndarray) -> dict:
@@ -273,6 +298,37 @@ def enu_from_map(
     return enu[0], enu[1], enu[2]
 
 
+def mask_and_incidence_from_flight(
+    z_ellips: np.ndarray,
+    transform: Affine,
+    crs: str,
+    look_azimuth_deg: float,
+    origin_enu: np.ndarray,
+    direction_enu: np.ndarray,
+    lat0: float,
+    lon0: float,
+    height0: float,
+    bin_width_m: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """North-up DSM (row 0 = north) to a mask and per-cell incidence (degrees).
+
+    Incidence is the off-nadir angle from the flight line, in the same
+    north-up grid as the mask. It is not a fifth image band.
+    """
+    xs, ys = pixel_grids(transform, z_ellips.shape[0], z_ellips.shape[1])
+    east, north, up = enu_from_map(xs, ys, z_ellips, crs, lat0, lon0, height0)
+    slant, alpha = perpendicular_geometry(east, north, up, origin_enu, direction_enu)
+    slant_o, _ = orient_range(slant, look_azimuth_deg)
+    alpha_o, restore = orient_range(alpha, look_azimuth_deg)
+    if float(np.nanmean(alpha_o[:, -1]) - np.nanmean(alpha_o[:, 0])) < 0.0:
+        raise RuntimeError(
+            f"look {look_azimuth_deg:.3f}° scans toward the track, not away from it"
+        )
+    mask_o = scan_near_field(slant_o, alpha_o, bin_width_m)
+    incidence = np.degrees(alpha).astype(np.float32)
+    return restore(mask_o), incidence
+
+
 def mask_from_flight(
     z_ellips: np.ndarray,
     transform: Affine,
@@ -286,18 +342,19 @@ def mask_from_flight(
     bin_width_m: float,
 ) -> np.ndarray:
     """North-up DSM (row 0 = north) to a near-field layover/shadow mask."""
-    xs, ys = pixel_grids(transform, z_ellips.shape[0], z_ellips.shape[1])
-    east, north, up = enu_from_map(xs, ys, z_ellips, crs, lat0, lon0, height0)
-    slant, alpha = perpendicular_geometry(east, north, up, origin_enu, direction_enu)
-    slant_o, _ = orient_range(slant, look_azimuth_deg)
-    alpha_o, restore = orient_range(alpha, look_azimuth_deg)
-    # Axis 1 must run away from the track: off-nadir increases.
-    if float(np.nanmean(alpha_o[:, -1]) - np.nanmean(alpha_o[:, 0])) < 0.0:
-        raise RuntimeError(
-            f"look {look_azimuth_deg:.3f}° scans toward the track, not away from it"
-        )
-    mask_o = scan_near_field(slant_o, alpha_o, bin_width_m)
-    return restore(mask_o)
+    mask, _ = mask_and_incidence_from_flight(
+        z_ellips,
+        transform,
+        crs,
+        look_azimuth_deg,
+        origin_enu,
+        direction_enu,
+        lat0,
+        lon0,
+        height0,
+        bin_width_m,
+    )
+    return mask
 
 
 def far_field_reference(z: np.ndarray, incidence_deg: float, look_azimuth_deg: float, pixel_size_m: float) -> np.ndarray:
