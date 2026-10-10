@@ -71,6 +71,7 @@ v1 (409 tiles, `sar/output/dataset`) is a different release and a different labe
 | [NEAR_FIELD.md](NEAR_FIELD.md) | Flight-line fit, datum, fold test, closed forms, one-strip physics against far-field look 180. |
 | [GEOMETRY.md](GEOMETRY.md) | Why the flag is backwards, why incidence is from vertical, swath width (707 m and 801 m are full widths). |
 | [DATASET.md](DATASET.md) | Original v1 dataset note. Its look paragraph is the old flag convention. |
+| [SNAP.md](SNAP.md) | Why the SNAP layover check did not run. The SLC is surface geometry; slant range fell back to 99999 m. |
 | [TRAIN.md](TRAIN.md) | U-Net recipe: 4-channel dB, train-only norm, no vertical flip, stop on mean IoU of classes 1–3. |
 
 Code for the v2 labels is `sar/near_field.py` and `sar/dataset_v2.py`. The SNAP gate is `capella_snap_stage.py`. It exits 2 on this product.
