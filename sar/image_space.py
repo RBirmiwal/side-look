@@ -1,28 +1,29 @@
 """
-Image-space layover / shadow labels for the SpaceNet 6 Capella airborne SAR.
+Layover / shadow labels for the SpaceNet 6 Capella airborne SAR, under two
+candidate rules for where the image draws things that stand above the ground.
 
-HOW THESE IMAGES WERE FORMED
-The product JSON says
+The product JSON says the image was focused onto SRTM GL1 on a UTM grid
+(image_geometry type=surface, z.dem_name=SrtmGl1), and the SpaceNet 6 paper
+says the imagery was ortho-rectified with SRTM. On strip
+20190822074237_20190822074521, though, labels built on that rule did not line
+up with the image, and the tallest structures looked bright on their own
+footprints. So both rules are implemented and the real image decides.
 
-    collect.image.image_geometry.type         = surface
-    collect.image.image_geometry.surface_type = affine
-    collect.image.image_geometry.z.dem_name   = SrtmGl1
+RULE A, "lean": project_line / project_grid
+    A point off the reference surface (roof, wall) is drawn where the
+    REFERENCE surface (SRTM) has the same closest-approach range to the
+    flight line. Roofs are drawn h/tan(theta) toward the sensor; the dark
+    region behind a building starts inside its own footprint.
 
-Capella's processor focused every output pixel directly at a 3D point on the
-SRTM GL1 surface, laid out on a UTM grid. There is no slant-range axis.
+RULE B, "in place": own_range_line / own_range_grid
+    Every cell is drawn where it stands, and shows whatever the radar
+    received at that cell's OWN closest-approach range. Roofs stay on their
+    footprints; the ground in front of a building also shows the wall and
+    roof (they share its range); shadow is the geometric shadow behind the
+    back wall, except where another building's wall or roof shares the
+    range and fills it. Without the filling, this is the v2 labelling.
 
-A scatterer that is NOT on that surface (a roof, a wall, a crane) focuses
-where the SRTM surface has the same closest-approach range to the flight
-line, in the same plane perpendicular to the track. So, along one cross-track
-line, a surface point with closest-approach range r appears at the image
-position whose REFERENCE-surface point has r_ref == r.
-
-WHAT THIS MODULE DOES
-For each cross-track line it
-  1. finds which parts of the DSM surface the radar can see (occlusion),
-  2. projects every visible piece of that surface to its image position on
-     the reference surface,
-  3. accumulates, per image pixel, how many surfaces cover it ("coverage").
+Both return "coverage" per pixel: how many visible surfaces share it.
 
     coverage < 0.5          shadow    nothing sends energy to this pixel
     0.5 <= coverage < 1.5   nominal   exactly one surface
@@ -31,25 +32,18 @@ For each cross-track line it
 Coverage is also the severity ("magnitude") target: 3 typically means ground
 + wall + roof in one pixel.
 
-This differs from the v2 labels, which mark where surfaces PHYSICALLY are.
-In particular the dark region behind a building in the image is longer than
-its geometric shadow and starts inside the building's own footprint, and a
-neighbouring building's layover can fill a geometric shadow so that the
-pixel is bright.
-
-INPUTS -- frame-agnostic on purpose
-The functions take per-cell quantities that near_field.py already computes,
-on one grid, in CANONICAL orientation (sensor at index 0 of the range axis):
+INPUTS, frame-agnostic on purpose
+Per-cell quantities that near_field.py already computes, on one grid, in
+CANONICAL orientation (sensor at index 0 of the range axis):
 
     r      closest-approach distance from the flight line to the DSM surface
            point of each cell (metres)
     alpha  off-nadir angle of that DSM point (any monotonic angle unit);
            grows away from the sensor over flat ground
-    r_ref  closest-approach distance to the REFERENCE-surface point of the
-           same cell (SRTM GL1, ellipsoidal, same frame as r)
+    r_ref  (rule A only) closest-approach distance to the REFERENCE-surface
+           point of the same cell (SRTM GL1, ellipsoidal, same frame as r)
 
-`line_geometry()` builds these for a straight level track, for tests or for
-callers without near_field.py.
+`line_geometry()` builds r and alpha for a straight level track, for tests.
 
 Pad the DSM at least ~150 m beyond both range edges of the image before
 calling, then crop. Content can project in from outside: layover from beyond
@@ -111,38 +105,24 @@ def _coverage_from_intervals(lo, hi, n):
 # ----------------------------------------------------------------------
 # one cross-track line
 # ----------------------------------------------------------------------
-def project_line(r, alpha, r_ref, nan_margin=0, angle_tol=1e-12):
+def _visible_segments(r, alpha, nan_margin=0, angle_tol=1e-12):
     """
-    Project one cross-track line of DSM into image space.
+    Occlusion along one cross-track line, shared by both rules.
 
-    r, alpha : (n,) DSM surface closest-approach range and off-nadir angle
-    r_ref    : (n,) reference-surface closest-approach range at the same cells;
-               must increase along the line (true for any SRTM-like surface)
-    nan_margin : cells after a NaN whose visibility is treated as unknown,
-               because the missing DSM could have hidden a tall occluder
-
-    Returns
-      coverage : (n,) surfaces per image pixel
-      unknown  : (n,) bool, pixel touched by projections of unknown surface
-      visible  : (n,) bool, DSM cell visible from the sensor (ground space)
+    Returns a dict with
+      visible       (n,)   DSM cell visible from the sensor
+      uncertain     (n,)   NaN cells and cells within nan_margin of one
+      r_start/r_end (n-1,) closest-approach range span of the visible part of
+                           each segment k -> k+1
+      use           (n-1,) segment has a visible part
+      seg_unknown   (n-1,) segment touches an uncertain cell
     """
     r = np.asarray(r, float)
     alpha = np.asarray(alpha, float)
-    r_ref = np.asarray(r_ref, float)
     n = r.size
     idx = np.arange(n, dtype=float)
 
     bad = ~(np.isfinite(r) & np.isfinite(alpha))
-
-    # reference range must be strictly increasing to be invertible
-    rr = r_ref.copy()
-    if not np.all(np.isfinite(rr)):
-        raise ValueError("r_ref must be finite everywhere on the line")
-    d = np.diff(rr)
-    if np.any(d <= 0):
-        # an SRTM surface steeper than the look angle; does not happen in
-        # Rotterdam but keep the mapping usable
-        rr = np.maximum.accumulate(rr + np.arange(n) * 1e-9)
 
     # ---- visibility: visible iff alpha >= max alpha of all closer cells ----
     a = np.where(bad, -np.inf, alpha)
@@ -160,7 +140,6 @@ def project_line(r, alpha, r_ref, nan_margin=0, angle_tol=1e-12):
         uncertain |= ((idx - last_bad) <= nan_margin) | ((next_bad - idx) <= nan_margin)
 
     # ---- segments between consecutive cells -------------------------------
-    k = np.arange(n - 1)
     a0, a1 = alpha[:-1], alpha[1:]
     r0, r1 = r[:-1], r[1:]
     v0, v1 = visible[:-1], visible[1:]
@@ -177,34 +156,101 @@ def project_line(r, alpha, r_ref, nan_margin=0, angle_tol=1e-12):
         t_star = (thr - a0) / (a1 - a0)
     t0[emerge] = np.clip(t_star[emerge], 0.0, 1.0)
 
-    r_start = r0 + t0 * (r1 - r0)
-    r_end = r1
+    return dict(visible=visible, uncertain=uncertain,
+                r_start=r0 + t0 * (r1 - r0), r_end=r1.copy(),
+                use=use, seg_unknown=uncertain[:-1] | uncertain[1:])
 
-    seg_unknown = uncertain[:-1] | uncertain[1:]
+
+def _accumulate(p0, p1, use, seg_unknown, n):
+    """Coverage and unknown flags on n cells from segment index spans."""
+    lo = np.clip(np.minimum(p0, p1), -0.5, n - 0.5)
+    hi = np.clip(np.maximum(p0, p1), -0.5, n - 0.5)
+    good = use & ~seg_unknown & (hi > lo)
+    coverage = _coverage_from_intervals(lo[good], hi[good], n)
+
+    unk_lo = np.where(np.isfinite(lo), lo, np.nan)[seg_unknown]
+    unk_hi = np.where(np.isfinite(hi), hi, np.nan)[seg_unknown]
+    keep = np.isfinite(unk_lo) & np.isfinite(unk_hi)
+    unknown_cov = _coverage_from_intervals(unk_lo[keep], unk_hi[keep], n)
+    return coverage, unknown_cov > 0
+
+
+def project_line(r, alpha, r_ref, nan_margin=0, angle_tol=1e-12):
+    """
+    RULE A ("lean"). Project one cross-track line of DSM into image space.
+
+    r, alpha : (n,) DSM surface closest-approach range and off-nadir angle
+    r_ref    : (n,) reference-surface closest-approach range at the same cells;
+               must increase along the line (true for any SRTM-like surface)
+    nan_margin : cells after a NaN whose visibility is treated as unknown,
+               because the missing DSM could have hidden a tall occluder
+
+    Returns
+      coverage : (n,) surfaces per image pixel
+      unknown  : (n,) bool, pixel touched by projections of unknown surface
+      visible  : (n,) bool, DSM cell visible from the sensor (ground space)
+    """
+    r = np.asarray(r, float)
+    r_ref = np.asarray(r_ref, float)
+    n = r.size
+    idx = np.arange(n, dtype=float)
+
+    # reference range must be strictly increasing to be invertible
+    rr = r_ref.copy()
+    if not np.all(np.isfinite(rr)):
+        raise ValueError("r_ref must be finite everywhere on the line")
+    if np.any(np.diff(rr) <= 0):
+        # an SRTM surface steeper than the look angle; does not happen in
+        # Rotterdam but keep the mapping usable
+        rr = np.maximum.accumulate(rr + np.arange(n) * 1e-9)
+
+    s = _visible_segments(r, alpha, nan_margin, angle_tol)
 
     # map closest-approach range to fractional image index on the reference
     def to_index(rv):
         return np.interp(rv, rr, idx, left=-np.inf, right=np.inf)
 
-    p0 = to_index(r_start)
-    p1 = to_index(r_end)
-    lo = np.minimum(p0, p1)
-    hi = np.maximum(p0, p1)
-    lo = np.clip(lo, -0.5, n - 0.5)
-    hi = np.clip(hi, -0.5, n - 0.5)
+    coverage, unk = _accumulate(to_index(s["r_start"]), to_index(s["r_end"]),
+                                s["use"], s["seg_unknown"], n)
+    return coverage, unk | s["uncertain"], s["visible"]
 
-    good = use & ~seg_unknown & (hi > lo)
-    coverage = _coverage_from_intervals(lo[good], hi[good], n)
 
-    # unknown pixels: anything an uncertain segment could project onto,
-    # plus the uncertain cells themselves
-    unk_lo = np.where(np.isfinite(lo), lo, np.nan)[seg_unknown]
-    unk_hi = np.where(np.isfinite(hi), hi, np.nan)[seg_unknown]
-    keep = np.isfinite(unk_lo) & np.isfinite(unk_hi)
-    unknown_cov = _coverage_from_intervals(unk_lo[keep], unk_hi[keep], n)
-    unknown = (unknown_cov > 0) | uncertain
+def own_range_line(r, alpha, nan_margin=0, step=0.05, angle_tol=1e-12):
+    """
+    RULE B ("in place"). Each cell shows the visible surfaces at its OWN
+    closest-approach range.
 
-    return coverage, unknown, visible
+    The visible surface pieces of the line are binned by range on a fine
+    grid (step metres), which gives layers(range): how many visible surfaces
+    the radar sees at that range. Each cell's coverage is layers(r of that
+    cell). A visible cell counts itself; a hidden cell does not, so it is
+    shadow unless something else shares its range.
+
+    Returns (coverage, unknown, visible), each (n,), like project_line.
+    """
+    r = np.asarray(r, float)
+    n = r.size
+    s = _visible_segments(r, alpha, nan_margin, angle_tol)
+    fin = np.isfinite(r)
+    if not fin.any():
+        return np.zeros(n), np.ones(n, bool), s["visible"]
+
+    r0 = np.nanmin(r) - 2 * step
+    m = int(np.ceil((np.nanmax(r) + 2 * step - r0) / step)) + 1
+
+    def to_bin(rv):
+        return (rv - r0) / step
+
+    layers, unk_bins = _accumulate(to_bin(s["r_start"]), to_bin(s["r_end"]),
+                                   s["use"], s["seg_unknown"], m)
+
+    coverage = np.zeros(n)
+    unknown = s["uncertain"].copy()
+    b = to_bin(r[fin])
+    grid = np.arange(m, dtype=float)
+    coverage[fin] = np.interp(b, grid, layers)
+    unknown[fin] |= unk_bins[np.clip(np.rint(b).astype(int), 0, m - 1)]
+    return coverage, unknown, s["visible"]
 
 
 # ----------------------------------------------------------------------
@@ -212,7 +258,7 @@ def project_line(r, alpha, r_ref, nan_margin=0, angle_tol=1e-12):
 # ----------------------------------------------------------------------
 def project_grid(r, alpha, r_ref, axis=0, nan_margin=0):
     """
-    Apply project_line to every cross-track line of a 2D grid.
+    RULE A. Apply project_line to every cross-track line of a 2D grid.
 
     axis : the RANGE axis (canonical orientation: index 0 nearest the sensor).
     Returns (coverage float32, unknown bool, visible bool), same shape as r.
@@ -227,6 +273,25 @@ def project_grid(r, alpha, r_ref, axis=0, nan_margin=0):
     vis = np.zeros(r.shape, bool)
     for j in range(r.shape[1]):
         c, u, v = project_line(r[:, j], alpha[:, j], r_ref[:, j], nan_margin)
+        cov[:, j], unk[:, j], vis[:, j] = c, u, v
+    return cov, unk, vis
+
+
+def own_range_grid(r, alpha, axis=0, nan_margin=0, step=0.05):
+    """
+    RULE B over a 2D grid. axis is the RANGE axis (index 0 nearest the sensor).
+    Returns (coverage float32, unknown bool, visible bool), same shape as r.
+    """
+    r = np.asarray(r)
+    if axis == 1:
+        cov, unk, vis = own_range_grid(r.T, np.asarray(alpha).T, 0, nan_margin, step)
+        return cov.T, unk.T, vis.T
+
+    cov = np.zeros(r.shape, np.float32)
+    unk = np.zeros(r.shape, bool)
+    vis = np.zeros(r.shape, bool)
+    for j in range(r.shape[1]):
+        c, u, v = own_range_line(r[:, j], alpha[:, j], nan_margin, step)
         cov[:, j], unk[:, j], vis[:, j] = c, u, v
     return cov, unk, vis
 
@@ -259,44 +324,66 @@ def _xcorr_peak(a, b, search):
     return int(iy - search), int(ix - search), float(win[iy, ix])
 
 
-def registration_check(hh_db, labels, size=1024, n_windows=8, search=300, along_axis=1):
+def registration_check(hh_db, labels, size=1024, n_windows=8, search=300, along_axis=1,
+                       range_bands=1, valid=None, use=("layover", "shadow"),
+                       min_labelled=0.02):
     """
     Cross-correlate a signed label image (+1 layover, -1 shadow, 0 otherwise)
     with HH in dB, in windows spread along the strip.
 
-    The peak tells how far the labels sit from what the image shows.
-    search=300 px (75 m) is wide enough to catch a missing geoid step,
-    which moves everything ~64 m in range at 35 deg incidence.
+    The peak tells how far the labels sit from what the image shows. A
+    positive dy means the labels must move AWAY from the sensor (along the
+    range axis, toward larger index) to match the image.
 
-    Returns a list of (window_centre, dy, dx, peak) and the median (dy, dx, peak).
+    range_bands : 1 = one band of windows at mid range (original behaviour);
+                  3 = near / middle / far bands, so a range-dependent offset
+                  shows up
+    valid       : optional bool mask; False pixels are ignored (water,
+                  clutter, unknown)
+    use         : which classes enter the signed image. ("shadow",) uses only
+                  shadow, whose near edge is where the two rules differ most.
+
+    Returns a list of (band, window_centre, dy, dx, peak) and the median
+    (dy, dx, peak) over all kept windows.
     """
     s = np.zeros(labels.shape, np.float32)
-    s[labels == LAYOVER] = 1.0
-    s[labels == SHADOW] = -1.0
-    s[labels == UNKNOWN] = 0.0
-    hh = np.where(labels == UNKNOWN, np.nan, hh_db).astype(np.float32)
+    if "layover" in use:
+        s[labels == LAYOVER] = 1.0
+    if "shadow" in use:
+        s[labels == SHADOW] = -1.0
+    ignore = labels == UNKNOWN
+    if valid is not None:
+        ignore |= ~np.asarray(valid, bool)
+    s[ignore] = 0.0
+    hh = np.where(ignore, np.nan, hh_db).astype(np.float32)
 
     L = hh.shape[along_axis]
     other = hh.shape[1 - along_axis]
-    h = min(size, other)
+    h = min(size, other // range_bands if range_bands > 1 else other)
     rows = []
-    for w in range(n_windows):
-        c = int((w + 0.5) * L / n_windows)
-        a0 = max(0, c - size // 2)
-        a1 = min(L, a0 + size)
-        if along_axis == 1:
+    for band in range(range_bands):
+        if range_bands == 1:
             o0 = (other - h) // 2
-            sl = (slice(o0, o0 + h), slice(a0, a1))
         else:
-            o0 = (other - h) // 2
-            sl = (slice(a0, a1), slice(o0, o0 + h))
-        hw, sw = hh[sl], s[sl]
-        if np.isfinite(hw).mean() < 0.8 or (sw != 0).mean() < 0.02:
-            continue
-        srch = min(search, min(hw.shape) // 2 - 1)
-        dy, dx, pk = _xcorr_peak(hw, sw, srch)
-        rows.append((c, dy, dx, pk))
+            centre = int((band + 0.5) * other / range_bands)
+            o0 = int(np.clip(centre - h // 2, 0, other - h))
+        for w in range(n_windows):
+            c = int((w + 0.5) * L / n_windows)
+            a0 = max(0, c - size // 2)
+            a1 = min(L, a0 + size)
+            if along_axis == 1:
+                sl = (slice(o0, o0 + h), slice(a0, a1))
+            else:
+                sl = (slice(a0, a1), slice(o0, o0 + h))
+            hw, sw = hh[sl], s[sl]
+            if np.isfinite(hw).mean() < 0.5 or (sw != 0).mean() < min_labelled:
+                continue
+            srch = min(search, min(hw.shape) // 2 - 1)
+            dy, dx, pk = _xcorr_peak(hw, sw, srch)
+            if along_axis == 0:
+                dy, dx = dx, dy
+            rows.append((band, c, dy, dx, pk))
     if not rows:
         return rows, (np.nan, np.nan, np.nan)
-    arr = np.array([r[1:] for r in rows], float)
+    arr = np.array([r[2:] for r in rows], float)
     return rows, tuple(np.median(arr, axis=0))

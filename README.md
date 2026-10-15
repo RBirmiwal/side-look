@@ -30,6 +30,8 @@ The image-space projection was run on the 22 Aug strip (`20190822074237_20190822
 
 A follow-up on that strip measured where the image puts flat ground and buildings, without a new rule. Middle-swath water is already at the map position. The SLC and the MAG-POL match to 1 px, including over buildings. The tall bright returns sit on the lidar footprint, not on the SRTM roof outline. Detail is in [SHIFT_CHECK.md](SHIFT_CHECK.md).
 
+Two placement rules were then scored on the same strip, against five label sets (v2, and each rule on the full DSM and on buildings only). None passes. Layover is bright enough in the near and middle thirds. Shadow is not dark enough in any set, and the registration on the specified mask kept no windows because a 30 m clutter buffer removes the buildings. On the footprints, the SRTM projection is still too close to the sensor and the in-place rule is within a few metres the other way. The bright pixels stay on the lidar footprint. Detail is in [RULE_CHECK.md](RULE_CHECK.md). No tiles were built. v2 was not modified.
+
 **SNAP was not an independent check.** ESA SNAP 14.0.0 is installed and can open the 22 Aug SLC (`20190822074237_20190822074521`). The product is not a radar-geometry SLC:
 
 - `image_geometry.type` is `surface` (`surface_type` `affine`). The pixels already sit on an EPSG:32631 grid at 0.25 m. Columns are not slant-range samples.
@@ -78,6 +80,7 @@ v1 (409 tiles, `sar/output/dataset`) is a different release and a different labe
 | [SNAP.md](SNAP.md) | Why the SNAP layover check did not run. The SLC is surface geometry; slant range fell back to 99999 m. |
 | [IMAGE_SPACE.md](IMAGE_SPACE.md) | Image-space projection onto SRTM. Registration and the brightness gate both failed. No tiles. |
 | [SHIFT_CHECK.md](SHIFT_CHECK.md) | Where this strip puts flat ground and buildings. Middle water is at the map. SLC matches MAG-POL. Bright roofs sit on the lidar footprint. |
+| [RULE_CHECK.md](RULE_CHECK.md) | SRTM projection against labels that stay on the map column. Neither passes. Shadow is still not dark. No tiles. |
 | [TRAIN.md](TRAIN.md) | U-Net recipe: 4-channel dB, train-only norm, no vertical flip, stop on mean IoU of classes 1–3. |
 
 Code for the v2 labels is `sar/near_field.py` and `sar/dataset_v2.py`. The SNAP gate is `capella_snap_stage.py`. It exits 2 on this product.

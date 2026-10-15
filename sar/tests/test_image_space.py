@@ -1,5 +1,6 @@
 """
-Closed-form tests for image_space.py.
+Closed-form tests for image_space.py, rule A ("lean", project_line) and
+rule B ("in place", own_range_line).
 
 Geometry matches the real strips: aircraft H = 1614 m above the ground,
 swath from ~24 to ~43 deg incidence, 0.25 m image cells.
@@ -33,7 +34,8 @@ for _p in (_here, _here.parent):
         break
 
 from image_space import (LAYOVER, NOMINAL, SHADOW, UNKNOWN, labels_from_coverage,  # noqa: E402
-                         line_geometry, project_line, registration_check)
+                         line_geometry, own_range_grid, own_range_line, project_grid,
+                         project_line, registration_check)
 
 H = 1614.0
 DY = 0.25
@@ -211,6 +213,123 @@ def test_registration_recovers_shift():
     _, (dy, dx, pk) = registration_check(hh, lab)
     print(f"  registration: recovered shift ({dy:+.0f}, {dx:+.0f}), peak {pk:.2f}  (expect +37, -11)")
     assert (dy, dx) == (37, -11)
+
+
+# ----------------------------------------------------------------------
+# rule B: every cell drawn where it stands, showing its own range
+# ----------------------------------------------------------------------
+def test_in_place_flat_ground():
+    _, r, a, _ = ground_line()
+    cov, unk, vis = own_range_line(r, a)
+    inner = cov[2:-2]
+    assert np.allclose(inner, 1.0, atol=1e-6), (inner.min(), inner.max())
+    assert not unk.any()
+    print(f"  in place, flat ground: coverage {inner.min():.6f}..{inner.max():.6f}  (expect 1)")
+
+
+def test_in_place_wide_building():
+    """
+    Rule B on a 40 m deep, 20 m tall box. Closed form:
+      ground in front, from y_top to the wall      ground + wall + roof = 3
+      roof, from the wall to y_r                   roof + wall + ground = 3
+          (y_r: roof point at the same range as the wall foot)
+      rest of the roof                             1
+      geometric shadow, back wall to shadow_end    0
+    This is the v2 layout: passive, active, nominal roof, shadow.
+    """
+    g, w, h = 1100.0, 40.0, 20.0
+    _, r, a, _ = ground_line((g, w, h))
+    cov, _, _ = own_range_line(r, a)
+    y_top = np.sqrt(g**2 - 2 * H * h + h**2)
+    y_r = np.sqrt(g**2 + 2 * H * h - h**2)
+    far = g + w - DY
+    shadow_end = far * H / (H - h)
+    zones = [("in front", Y[0], y_top, 1), ("ground in front", y_top, g, 3),
+             ("roof, near part", g, y_r, 3), ("roof, far part", y_r, g + w, 1),
+             ("geometric shadow", g + w, shadow_end, 0), ("behind", shadow_end, Y[-1], 1)]
+    for name, lo, hi, want in zones:
+        m, mn, mx = mean_cov(Y, cov, lo, hi)
+        print(f"  in place {name:<17} [{lo:8.2f}, {hi:8.2f})  coverage {m:5.3f}  (expect {want})")
+        assert abs(m - want) < 0.02 and mn > want - 0.05 and mx < want + 0.05, (name, m, mn, mx)
+    lab = labels_from_coverage(cov)
+    s_idx = np.where(lab == SHADOW)[0]
+    print(f"  in place: shadow {Y[s_idx.min()]:.2f}..{Y[s_idx.max()]:.2f}"
+          f"  vs back wall {g + w:.2f} .. {shadow_end:.2f}")
+    assert abs(Y[s_idx.min()] - (g + w)) <= 2 * DY, "shadow starts at the back wall"
+    assert abs(Y[s_idx.max()] - shadow_end) <= 2 * DY
+
+
+def test_rules_differ_where_expected():
+    """Same box: rule A darkens the far footprint, rule B keeps the roof there."""
+    g, w, h = 1100.0, 40.0, 20.0
+    _, r, a, rr = ground_line((g, w, h))
+    lab_a = labels_from_coverage(project_line(r, a, rr)[0])
+    lab_b = labels_from_coverage(own_range_line(r, a)[0])
+    fp_far = (Y > g + w / 2) & (Y < g + w - 2 * DY)
+    front = (Y > g - 25) & (Y < g - 5)
+    print(f"  far half of footprint: rule A {np.mean(lab_a[fp_far] == SHADOW):.0%} shadow,"
+          f" rule B {np.mean(lab_b[fp_far] == SHADOW):.0%} shadow")
+    print(f"  25..5 m in front:      rule A {np.mean(lab_a[front] == LAYOVER):.0%} layover,"
+          f" rule B {np.mean(lab_b[front] == LAYOVER):.0%} layover")
+    assert np.mean(lab_a[fp_far] == SHADOW) > 0.9 and np.mean(lab_b[fp_far] == SHADOW) == 0
+    assert np.mean(lab_a[front] == LAYOVER) > 0.9 and np.mean(lab_b[front] == LAYOVER) > 0.9
+
+
+def test_in_place_neighbour_fills_shadow():
+    """
+    Rule B with two buildings 20 m apart: the front building's geometric
+    shadow shares its range with the rear building's wall, so it is not dark.
+    v2 called it shadow. The rear building's shadow has nothing behind it.
+    """
+    front, rear = (1100.0, 15.0, 20.0), (1135.0, 15.0, 20.0)
+    z, r, a, _ = ground_line(front, rear)
+    cov, _, vis = own_range_line(r, a)
+    lab = labels_from_coverage(cov)
+    geo = (~vis) & (z == 0)
+    f_sh = geo & (Y < rear[0])
+    r_sh = geo & (Y >= rear[0])
+    print(f"  in place, two buildings: front geometric shadow {np.mean(lab[f_sh] == SHADOW):.0%} dark"
+          f" ({np.mean(lab[f_sh] == LAYOVER):.0%} layover, filled by the rear wall);"
+          f" rear {np.mean(lab[r_sh] == SHADOW):.0%} dark")
+    assert np.mean(lab[f_sh] == SHADOW) < 0.05 and np.mean(lab[r_sh] == SHADOW) > 0.95
+
+
+def test_in_place_nan_gap_and_grid():
+    z, r, a, _ = ground_line((1100.0, 40.0, 20.0))
+    r[2000:2040] = np.nan
+    a[2000:2040] = np.nan
+    cov, unk, _ = own_range_line(r, a, nan_margin=100)
+    assert unk[1900:2140].all() and not unk[:1700].any()
+    R = np.stack([r, r], axis=1)
+    A = np.stack([a, a], axis=1)
+    cg, ug, _ = own_range_grid(R, A, axis=0, nan_margin=100)
+    assert np.allclose(cg[:, 1], cov, atol=1e-5) and (ug[:, 0] == unk).all()
+    cg1, _, _ = own_range_grid(R.T, A.T, axis=1, nan_margin=100)
+    assert np.allclose(cg1.T, cg, atol=1e-6)
+    print(f"  in place NaN gap: {unk.sum()} unknown pixels; grid matches line on both axes")
+
+
+def test_registration_bands_and_shadow_only():
+    rng = np.random.default_rng(1)
+    rows, cols = 1800, 4000
+    lab = np.zeros((rows, cols), np.uint8)
+    for c in range(60, cols - 200, 150):
+        for r0 in (300, 900, 1500):
+            r0 += int(rng.integers(-60, 60))
+            lab[r0 - 80:r0, c:c + 80] = LAYOVER
+            lab[r0 + 20:r0 + 70, c:c + 80] = SHADOW
+    hh = rng.normal(-11, 3, (rows, cols)).astype(np.float32)
+    hh[lab == LAYOVER] += 6
+    hh[lab == SHADOW] -= 8
+    hh = np.roll(hh, (12, 0), axis=(0, 1))
+    res, (dy, dx, pk) = registration_check(hh, lab, size=512, n_windows=4, search=100,
+                                           range_bands=3)
+    bands = sorted({b for b, *_ in res})
+    res_s, (dys, dxs, _) = registration_check(hh, lab, size=512, n_windows=4, search=100,
+                                              range_bands=3, use=("shadow",))
+    print(f"  registration, 3 bands {bands}: ({dy:+.0f}, {dx:+.0f}); shadow only ({dys:+.0f}, {dxs:+.0f})"
+          f"  (expect +12, 0)")
+    assert bands == [0, 1, 2] and (dy, dx) == (12, 0) and (dys, dxs) == (12, 0)
 
 
 if __name__ == "__main__":
