@@ -1,0 +1,140 @@
+{
+  "strip": "P",
+  "sensor_at_row0": true,
+  "look_deg": 180.17997066932475,
+  "partial_chunks": 0,
+  "table": {
+    "T": {
+      "near": {
+        "median_db": -13.69,
+        "n": 242811,
+        "minus_L": -0.46000000000000085
+      },
+      "middle": {
+        "median_db": -13.99,
+        "n": 236516,
+        "minus_L": -0.6799999999999997
+      },
+      "far": {
+        "median_db": -13.729999999999999,
+        "n": 45334,
+        "minus_L": -0.03999999999999915
+      },
+      "all": {
+        "median_db": -13.83,
+        "n": 524661,
+        "minus_L": -0.4200000000000017
+      }
+    },
+    "Z": {
+      "near": {
+        "median_db": -14.749999999999998,
+        "n": 78234,
+        "minus_L": -1.5199999999999996
+      },
+      "middle": {
+        "median_db": -14.81,
+        "n": 267279,
+        "minus_L": -1.5
+      },
+      "far": {
+        "median_db": -14.37,
+        "n": 257290,
+        "minus_L": -0.6799999999999997
+      },
+      "all": {
+        "median_db": -14.63,
+        "n": 602803,
+        "minus_L": -1.2200000000000024
+      }
+    },
+    "W": {
+      "near": {
+        "median_db": -15.209999999999999,
+        "n": 3136771,
+        "minus_L": -1.9800000000000004
+      },
+      "middle": {
+        "median_db": -15.31,
+        "n": 4708992,
+        "minus_L": -2.0
+      },
+      "far": {
+        "median_db": -15.249999999999998,
+        "n": 2508871,
+        "minus_L": -1.5599999999999987
+      },
+      "all": {
+        "median_db": -15.27,
+        "n": 10354634,
+        "minus_L": -1.8600000000000012
+      }
+    },
+    "L": {
+      "near": {
+        "median_db": -13.229999999999999,
+        "n": 10610137,
+        "minus_L": 0.0
+      },
+      "middle": {
+        "median_db": -13.31,
+        "n": 18327494,
+        "minus_L": 0.0
+      },
+      "far": {
+        "median_db": -13.69,
+        "n": 14345096,
+        "minus_L": 0.0
+      },
+      "all": {
+        "median_db": -13.409999999999998,
+        "n": 43282727,
+        "minus_L": 0.0
+      }
+    }
+  },
+  "Z_minus_L": -1.2200000000000024,
+  "T_minus_L": -0.4200000000000017,
+  "T_minus_Z": 0.8000000000000007,
+  "W_minus_L": -1.8600000000000012,
+  "buildings_with_any_T": 202,
+  "buildings_with_200_T": 69,
+  "bins": {
+    "all": {
+      "n": 69,
+      "closer_to_Z": 0.4057971014492754,
+      "closer_to_0": 0.5942028985507246,
+      "tie": 0.0,
+      "median_T_minus_L": -0.3600000000000012
+    },
+    "h_10_20": {
+      "n": 36,
+      "closer_to_Z": 0.5,
+      "closer_to_0": 0.5,
+      "tie": 0.0,
+      "median_T_minus_L": -0.5900000000000016
+    },
+    "h_20_40": {
+      "n": 15,
+      "closer_to_Z": 0.4,
+      "closer_to_0": 0.6,
+      "tie": 0.0,
+      "median_T_minus_L": -0.240000000000002
+    },
+    "h_gt_40": {
+      "n": 4,
+      "closer_to_Z": 0.25,
+      "closer_to_0": 0.75,
+      "tie": 0.0,
+      "median_T_minus_L": 0.27999999999999936
+    }
+  },
+  "verdict_rule": "RAISED_NO_ECHO",
+  "definitions": {
+    "T": "eroded 2 m footprint, >= (6 m + max(0,s)/tan theta) behind the near wall, A<0.5, B>=0.5, known, finite HH, not shore water",
+    "Z": "outside footprints, A<0.5 and B<0.5 for every pixel within 2 m, known, finite HH, not shore water",
+    "W": "open water >30 m from shore at 1 m, finite HH, outside footprints",
+    "L": "both coverages nominal, outside footprints, known, finite HH, not shore water",
+    "thirds": "canonical range, sensor at index 0"
+  }
+}
