@@ -2,7 +2,7 @@
 
 Layover and shadow labels for Capella X-band MAG-POL over Rotterdam (SpaceNet 6). The labels come from an AHN lidar DSM and the flight line. SAR brightness is used only as a check, never as a label.
 
-The label set to train on next is **dataset v4** ([V4.md](V4.md)). v2 is unchanged and is still the published tile release. v1 is kept. v4 is not a release yet: the tiles are not in this repo.
+The label set to train on next is **dataset v4** ([V4.md](V4.md)). v2 is unchanged and is still the published tile release. v1 is kept. v4 is not a release yet: the tiles are not in this repo. Six of them are shown as pictures in [V4.md](V4.md).
 
 ## Settled
 
