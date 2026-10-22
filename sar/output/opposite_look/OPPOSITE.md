@@ -121,3 +121,15 @@ No building has a dark footprint in both looks and a bright copper outline in bo
 ## What this does not change
 
 v4 is unchanged. No tile was rebuilt. Kop van Zuid still has no opposite look, so this test does not re-score the rule B decision on that strip ([DECIDE.md](../../../DECIDE.md)). It says the port roofs that can be seen from both sides are not sitting `L` meters toward the aircraft.
+
+## Extra figures
+
+The six crops above are unchanged, and so are the numbers. Three buildings also have a four-panel figure on the same grey stretch: south look plain, south look with the footprint and the copper outline, then the north look the same way. A 25 m bar and the aircraft side are on each panel. Building 06 has a second gif with only the white footprint. The eight registration windows are the same grid, not shifted, with the measured offset written on each. One line per file is in [CAPTIONS.txt](CAPTIONS.txt).
+
+| | |
+|---|---|
+| [03](quad_03_0599100100007749.png) | 43.4 m. Both copper outlines are inside the image. South copper crosses `0599100000752039` by 151 m². |
+| [04](quad_04_0599100000700363.png) | 32.0 m. South copper is partly outside the image. North copper still covers this roof and also `0599100100007020`. |
+| [06](quad_06_0599100000431693.png) | 31.2 m, the stay. Copper is the darker gap. [Footprint only](gif_06_0599100000431693_footprint.gif). |
+| [reg 0](reg_00.png)–[7](reg_07.png) | The eight shoreline windows. Locked: 2, 4, 7. On the ±10 m stop: 1, 3. |
+

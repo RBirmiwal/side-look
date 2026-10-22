@@ -1,0 +1,24 @@
+01_0599100100003618.png — 72.7 m, unclear. South copper (L 162 m) is off the swath; the bright return that is imaged sits in the white footprint.
+01_0599100100003618.gif — Same crop, south look then north look, one second each.
+02_0599100000631189.png — 44.2 m, unclear. South copper is off the swath. North copper (+4.62 dB) sits on the next block, not a shifted copy of this roof.
+02_0599100000631189.gif — Same crop, south look then north look, one second each.
+03_0599100100007749.png — 43.4 m, unclear. Both L values are inside the crop. Footprint +1.88 / +0.47 dB, copper +1.98 / +1.22 dB.
+03_0599100100007749.gif — Same crop, south look then north look, one second each.
+04_0599100000700363.png — 32.0 m, unclear. L is shorter than the building, so copper still covers the bright edge. The south swath cuts the copper outline.
+04_0599100000700363.gif — Same crop, south look then north look, one second each.
+05_0599100110004360.png — 31.8 m, unclear. The north-looking swath ends on the building, so that panel is black.
+05_0599100110004360.gif — Same crop, south look then north look, one second each.
+06_0599100000431693.png — 31.2 m, stays. Footprint +4.87 dB north and +2.45 dB south, both brighter than copper (+0.11 and +1.68 dB).
+06_0599100000431693.gif — Same crop, south look then north look, one second each, with both outlines.
+quad_03_0599100100007749.png — Four panels, same grey stretch. Both copper outlines are inside the image. South copper crosses 0599100000752039 by 151 m² and does not contain this roof.
+quad_04_0599100000700363.png — Four panels. South copper is partly outside the image. North copper still covers this roof (955 m²) and also 0599100100007020 (265 m²).
+quad_06_0599100000431693.png — Four panels of the clean stay. Bright lines stay in the white rectangle; copper is the darker gap, inside both images.
+gif_06_0599100000431693_footprint.gif — The two plain looks of 0599100000431693, white footprint only, one second each.
+reg_00.png — Window 0 (592357 E, 5749252 N). +7.58 m east, +8.51 m north, coef 0.22. Did not lock.
+reg_01.png — Window 1 (593607 E, 5749332 N). +0.06 m east, −10.00 m north, coef 0.44. On the ±10 m stop.
+reg_02.png — Window 2 (594357 E, 5749332 N). −0.28 m east, +0.04 m north, coef 0.44. Locked.
+reg_03.png — Window 3 (595107 E, 5749252 N). −0.02 m east, −10.00 m north, coef 0.28. On the ±10 m stop.
+reg_04.png — Window 4 (595607 E, 5749412 N). +0.32 m east, −3.24 m north, coef 0.53. Locked.
+reg_05.png — Window 5 (598357 E, 5749252 N). −0.75 m east, +6.59 m north, coef 0.12. Did not lock.
+reg_06.png — Window 6 (598357 E, 5749332 N). −0.10 m east, +5.90 m north, coef 0.21. Did not lock.
+reg_07.png — Window 7 (600357 E, 5749412 N). −2.51 m east, +0.09 m north, coef 0.53. Locked.
