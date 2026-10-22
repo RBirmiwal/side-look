@@ -2,7 +2,7 @@
 
 Layover and shadow labels for Capella X-band MAG-POL over Rotterdam (SpaceNet 6). The labels come from an AHN lidar DSM and the flight line. SAR brightness is used only as a check, never as a label.
 
-The training set is **dataset v2**. v1 is kept, and it is not what the next model should train on.
+The label set to train on next is **dataset v4** ([V4.md](V4.md)). v2 is unchanged and is still the published tile release. v1 is kept. v4 is not a release yet: the tiles are not in this repo.
 
 ## Settled
 
@@ -17,6 +17,7 @@ The training set is **dataset v2**. v1 is kept, and it is not what the next mode
 | Canonical tile | Sensor at the top (row 0), layover toward row 0. North-looking strips are flipped. Image, mask, and incidence flip together. |
 | v1 | 409 tiles. Look taken from the flag, so it is reversed. One theta per strip. Not modified. |
 | v2 | 3969 tiles: 3772 train / 138 val / 59 test. `label_version` is `v2-nearfield`. |
+| v4 | 3042 tiles from 15 of those 18 strips: 2918 train / 95 val / 29 test. Rule B, buildings only, AHN4 DTM. `0` nominal, `1` layover, `2` shadow, `255` ignore. `label_version` is `v4-inplace-dtm-ign`. |
 
 Every v2 strip that was tiled has active layover brighter than nominal by more than **+2.0 dB** in HH. Overall active − nominal is **+3.14 dB**. Train, val, and test bounding boxes do not intersect. A fitted look more than 5° from north or south is skipped rather than rotated. None of the selected strips were that far off.
 
@@ -24,13 +25,15 @@ Four strips passed the angle test and failed the +2.0 dB gate. On each of them t
 
 ## Not settled
 
-**Shadow is not dark.** Overall shadow − nominal HH on v2 is **+0.16 dB**. It does not block a strip. On the 22 Aug strip only the near-range third is slightly negative (−0.19 dB); the far third is about +1.2 dB. This is still the open label problem. A new placement of the roof does not fix it: the stacked shadow profile on both strips in [DECIDE.md](DECIDE.md) is already at the background in the first bin.
+**Shadow is not dark on the v2 labels.** Overall shadow − nominal HH on v2 is **+0.16 dB**. It does not block a strip. On the 22 Aug strip only the near-range third is slightly negative (−0.19 dB); the far third is about +1.2 dB. A new placement of the roof does not fix it: the stacked shadow profile on both strips in [DECIDE.md](DECIDE.md) is already at the background in the first bin. On the v4 buildings-only labels, P and K shadow is about −1 dB ([V4.md](V4.md)). That is a different mask. It is darker than nominal, and it is not the open-water floor.
 
 **Where the roof goes is settled.** The image-space projection on the 22 Aug strip failed both gates: the labels sat 28–48 px too close to the sensor, and shadow was −0.04 dB ([IMAGE_SPACE.md](IMAGE_SPACE.md)). Flat ground on that strip is already at the map, and the bright roofs sit on the lidar footprint rather than on the SRTM outline ([SHIFT_CHECK.md](SHIFT_CHECK.md)). Two placement rules were then scored against five label sets (v2, and each rule on the full DSM and on buildings only). None of those sets passed the old gate. Layover is bright enough in the near and middle thirds. Shadow is not dark enough in any set, and the registration on the specified mask kept no windows because a 30 m clutter buffer removes the buildings. On the footprints, the SRTM projection is still too close to the sensor and the in-place rule is within a few metres the other way. Detail is in [RULE_CHECK.md](RULE_CHECK.md).
 
 The follow-up in [DECIDE.md](DECIDE.md) is the decision. On Kop van Zuid the pixels the two rules disagree on — A calls them shadow, B leaves them on the footprint — match land (−0.04 dB), and the agreed no-echo beside buildings is −1.52 dB. That is rule B. The port strip does not reach the dark-no-echo bar (Z is only −1.22 dB, against water at −1.86), so its formal call is raised no-echo rather than in-place, and the same histogram says the roofs are not the no-echo population. Nothing supports the SRTM lean. The layover in front of the wall tracks `L_B` from the AHN edge height (slope 0.89 on K, n = 159). The one clean ~52 m column is 1:1.
 
 [V4_CHECK.md](V4_CHECK.md) is the attempt to build that label. Ground is the AHN4 DTM, not the 5th-percentile surface, and the mask is `own_range_grid` on buildings only. The gate was layover at least +1.5 dB above nominal in the near and middle thirds, on every known non-water pixel, on both strips. Kop van Zuid passes (+2.16 / +2.62). The port strip does not (+1.18 / +1.04). The roof test is between the two bars (+0.87 dB, 70% of buildings positive), so it would not have switched on the roof-nominal edit either. No tiles were built. v2 was not modified.
+
+[V4.md](V4.md) is the follow-up. Pixels where a non-building object shapes the return are marked 255 and left out of the contrast. On that mask the port strip clears +1.5 dB (+1.68 near, +1.52 middle, full strip). Fifteen of the eighteen v2 strips were tiled (3042 tiles). Three were left out for missing the +1.0 dB tile gate. The single-batch overfit runs. The full training run does not fit this machine.
 
 **SNAP was not an independent check.** ESA SNAP 14.0.0 is installed and can open the 22 Aug SLC (`20190822074237_20190822074521`). The product is not a radar-geometry SLC:
 
@@ -46,7 +49,9 @@ Staging printed `NOT READY` and stopped. No DSM was exported, the layover graph 
 
 ## What to train on
 
-v2 tiles are float16 dB, 4 bands (HH, HV, VH, VV), plus a separate `incidence` key in degrees. Do not fold incidence into the image normalisation. `look` is 1 if the tile was flipped. Norm stats are train-only:
+v4 tiles are float16 dB, 4 bands, copied from v2, plus `incidence`, `look`, and a float16 `coverage` (surfaces per pixel). The mask is 0 nominal, 1 layover, 2 shadow, 255 ignore. Ignore is left out of the loss and out of every score. `label_version` is `v4-inplace-dtm-ign`. Norm stats are the v2 train stats, because the images did not change. The tiles themselves are not in a release. Counts, the per-strip gate, and the class mix are in [V4.md](V4.md) and [REPORT_v4.md](REPORT_v4.md). Val and test are much richer in layover than train (28% and 36%, against 5% on train). That is the v2 geographic split, not a new one.
+
+v2, for the images and for anything still training on the near-field labels, is the same four dB bands plus a separate `incidence` key in degrees. Do not fold incidence into the image normalisation. `look` is 1 if the tile was flipped. Norm stats are train-only:
 
 | band | mean | std |
 |---|---:|---:|
@@ -82,7 +87,9 @@ v1 (409 tiles, `sar/output/dataset`) is a different release and a different labe
 | [SHIFT_CHECK.md](SHIFT_CHECK.md) | Where this strip puts flat ground and buildings. Middle water is at the map. SLC matches MAG-POL. Bright roofs sit on the lidar footprint. |
 | [RULE_CHECK.md](RULE_CHECK.md) | SRTM projection against labels that stay on the map column. Neither passes the old gate. Shadow is still not dark. No tiles. |
 | [DECIDE.md](DECIDE.md) | The roof stays on the footprint (rule B). Layover length tracks `L_B`. |
-| [V4_CHECK.md](V4_CHECK.md) | Rule B with the AHN4 DTM. The port strip misses +1.5 dB. No tiles. |
-| [TRAIN.md](TRAIN.md) | U-Net recipe: 4-channel dB, train-only norm, no vertical flip, stop on mean IoU of classes 1–3. |
+| [V4_CHECK.md](V4_CHECK.md) | Rule B with the AHN4 DTM, scored on every known dry pixel. The port strip misses +1.5 dB. No tiles. |
+| [V4.md](V4.md) | The same labels with clutter marked ignore. The port strip clears +1.5 dB. Fifteen strips tiled. |
+| [REPORT_v4.md](REPORT_v4.md) | Per-strip gate, ignored fraction, class shares, coverage. |
+| [TRAIN.md](TRAIN.md) | U-Net recipe: 4-channel dB, train-only norm, no vertical flip, stop on mean IoU of the rare classes. |
 
 Code for the v2 labels is `sar/near_field.py` and `sar/dataset_v2.py`. The SNAP gate is `capella_snap_stage.py`. It exits 2 on this product.
