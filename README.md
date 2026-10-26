@@ -81,6 +81,7 @@ v1 (409 tiles, `sar/output/dataset`) is a different release and a different labe
 | doc | what it answers |
 |---|---|
 | [REPORT_v2.md](REPORT_v2.md) | Strips, geometry table, split counts, class fractions, the +2 dB gate, v1 comparison, download. |
+| [SIDELOOK.md](SIDELOOK.md) | Building geometry on the v2 tiles: 3DBAG footprints, heights, per-strip layover and shadow, how a chip is cut. Release `sidelook-v2`. |
 | [NEAR_FIELD.md](NEAR_FIELD.md) | Flight-line fit, datum, fold test, closed forms, one-strip physics against far-field look 180. |
 | [GEOMETRY.md](GEOMETRY.md) | Why the flag is backwards, why incidence is from vertical, swath width (707 m and 801 m are full widths). |
 | [DATASET.md](DATASET.md) | Original v1 dataset note. Its look paragraph is the old flag convention. |
