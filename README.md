@@ -37,6 +37,8 @@ The follow-up in [DECIDE.md](DECIDE.md) is the decision. On Kop van Zuid the pix
 
 [V4.md](V4.md) is the follow-up. Pixels where a non-building object shapes the return are marked 255 and left out of the contrast. On that mask the port strip clears +1.5 dB (+1.68 near, +1.52 middle, full strip). Fifteen of the eighteen v2 strips were tiled (3042 tiles). Three were left out for missing the +1.0 dB tile gate. The single-batch overfit runs. The full training run does not fit this machine.
 
+[MAGNITUDE.md](MAGNITUDE.md) is the per-pixel layover magnitude, in metres: how far the farthest echo in a layover pixel came from. The functions are in `sar/image_space.py` and the closed-form tests pass 19/19. No v5 tiles were built. A v2 tile has no DSM, so it cannot supply `r` and `alpha`, and the building index only has one layover length per building. That is a different target. v2 was not modified.
+
 **SNAP was not an independent check.** ESA SNAP 14.0.0 is installed and can open the 22 Aug SLC (`20190822074237_20190822074521`). The product is not a radar-geometry SLC:
 
 - `image_geometry.type` is `surface` (`surface_type` `affine`). The pixels already sit on an EPSG:32631 grid at 0.25 m. Columns are not slant-range samples.
@@ -94,6 +96,7 @@ v1 (409 tiles, `sar/output/dataset`) is a different release and a different labe
 | [V4_CHECK.md](V4_CHECK.md) | Rule B with the AHN4 DTM, scored on every known dry pixel. The port strip misses +1.5 dB. No tiles. |
 | [V4.md](V4.md) | The same labels with clutter marked ignore. The port strip clears +1.5 dB. Fifteen strips tiled. |
 | [REPORT_v4.md](REPORT_v4.md) | Per-strip gate, ignored fraction, class shares, coverage. |
+| [MAGNITUDE.md](MAGNITUDE.md) | Layover magnitude in metres. Why a v2 tile cannot supply it. |
 | [TRAIN.md](TRAIN.md) | U-Net recipe: 4-channel dB, train-only norm, no vertical flip, stop on mean IoU of the rare classes. |
 
 Code for the v2 labels is `sar/near_field.py` and `sar/dataset_v2.py`. The SNAP gate is `capella_snap_stage.py`. It exits 2 on this product.
