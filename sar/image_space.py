@@ -253,6 +253,99 @@ def own_range_line(r, alpha, nan_margin=0, step=0.05, angle_tol=1e-12):
     return coverage, unknown, s["visible"]
 
 
+def own_range_displacement(r, alpha, nan_margin=0, step=0.1, pixel_m=0.25,
+                           search_bins=1, angle_tol=1e-12):
+    """
+    LAYOVER MAGNITUDE for each cell: how far, in metres along the line, the
+    echoes that land in this cell have come from.
+
+    A cell receives the echo of every visible surface piece at its own
+    closest-approach range (rule B; in front of a building rule A gives the
+    same answer). Its displacement is the largest horizontal distance between
+    the cell and any of those pieces:
+      - ground in front of a wall, where only the wall mixes in: the distance
+        to the wall
+      - where the roof's echo also lands: the distance to that roof point,
+        about height / tan(incidence)
+      - ordinary ground: a cell or two (under 1 m, the binning floor)
+      - shadow with nothing at its range: 0
+    pixel_m is the cell size along the line. search_bins widens the range
+    window by that many bins on each side so a cell does not miss a piece
+    that falls just across a bin edge.
+
+    Returns (displacement_m, unknown), each (n,).
+    """
+    r = np.asarray(r, float)
+    n = r.size
+    s = _visible_segments(r, alpha, nan_margin, angle_tol)
+    fin = np.isfinite(r)
+    disp = np.zeros(n)
+    unknown = s["uncertain"].copy()
+    if not fin.any():
+        return disp, np.ones(n, bool)
+
+    r0 = np.nanmin(r) - (2 + search_bins) * step
+    m = int(np.ceil((np.nanmax(r) + (2 + search_bins) * step - r0) / step)) + 1
+
+    lo = (np.minimum(s["r_start"], s["r_end"]) - r0) / step
+    hi = (np.maximum(s["r_start"], s["r_end"]) - r0) / step
+    good = s["use"] & ~s["seg_unknown"] & np.isfinite(lo) & np.isfinite(hi)
+    k = np.flatnonzero(good)
+    b0 = np.clip(np.floor(lo[k]).astype(np.int64), 0, m - 1)
+    b1 = np.clip(np.ceil(hi[k]).astype(np.int64), 0, m - 1)
+    cnt = b1 - b0 + 1
+    seg = np.repeat(np.arange(k.size), cnt)
+    bins = b0[seg] + (np.arange(cnt.sum()) - np.repeat(np.cumsum(cnt) - cnt, cnt))
+    ypos = k[seg] + 0.5                       # horizontal position, in cells
+    ymin = np.full(m, np.inf)
+    ymax = np.full(m, -np.inf)
+    np.minimum.at(ymin, bins, ypos)
+    np.maximum.at(ymax, bins, ypos)
+
+    # unknown: any bin touched by an uncertain segment
+    ku = np.flatnonzero(s["seg_unknown"] & np.isfinite(lo) & np.isfinite(hi))
+    unk_bins = np.zeros(m, bool)
+    if ku.size:
+        u0 = np.clip(np.floor(lo[ku]).astype(np.int64), 0, m - 1)
+        u1 = np.clip(np.ceil(hi[ku]).astype(np.int64), 0, m - 1)
+        diff = np.zeros(m + 1, np.int64)
+        np.add.at(diff, u0, 1)
+        np.add.at(diff, u1 + 1, -1)
+        unk_bins = np.cumsum(diff[:-1]) > 0
+
+    i = np.flatnonzero(fin)
+    bc = np.rint((r[i] - r0) / step).astype(np.int64)
+    best = np.zeros(i.size)
+    for off in range(-search_bins, search_bins + 1):
+        bb = np.clip(bc + off, 0, m - 1)
+        lo_y, hi_y = ymin[bb], ymax[bb]
+        has = np.isfinite(lo_y)
+        d = np.where(has, np.maximum(np.abs(hi_y - i), np.abs(lo_y - i)), 0.0)
+        best = np.maximum(best, d)
+        unknown[i] |= unk_bins[bb]
+    disp[i] = best * pixel_m
+    return disp, unknown
+
+
+def own_range_displacement_grid(r, alpha, axis=0, nan_margin=0, step=0.1, pixel_m=0.25):
+    """own_range_displacement over a 2D grid; axis is the RANGE axis."""
+    r = np.asarray(r)
+    if axis == 1:
+        d, u = own_range_displacement_grid(r.T, np.asarray(alpha).T, 0, nan_margin, step, pixel_m)
+        return d.T, u.T
+    disp = np.zeros(r.shape, np.float32)
+    unk = np.zeros(r.shape, bool)
+    for j in range(r.shape[1]):
+        d, u = own_range_displacement(r[:, j], alpha[:, j], nan_margin, step, pixel_m)
+        disp[:, j], unk[:, j] = d, u
+    return disp, unk
+
+
+def layover_magnitude(coverage, displacement, layover_from=1.5):
+    """The severity target: displacement in metres on layover pixels, 0 elsewhere."""
+    return np.where(np.asarray(coverage) >= layover_from, displacement, 0.0).astype(np.float32)
+
+
 # ----------------------------------------------------------------------
 # a whole grid
 # ----------------------------------------------------------------------

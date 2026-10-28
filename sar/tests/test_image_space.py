@@ -34,8 +34,9 @@ for _p in (_here, _here.parent):
         break
 
 from image_space import (LAYOVER, NOMINAL, SHADOW, UNKNOWN, labels_from_coverage,  # noqa: E402
-                         line_geometry, own_range_grid, own_range_line, project_grid,
-                         project_line, registration_check)
+                         layover_magnitude, line_geometry, own_range_displacement,
+                         own_range_displacement_grid, own_range_grid, own_range_line,
+                         project_grid, project_line, registration_check)
 
 H = 1614.0
 DY = 0.25
@@ -330,6 +331,72 @@ def test_registration_bands_and_shadow_only():
     print(f"  registration, 3 bands {bands}: ({dy:+.0f}, {dx:+.0f}); shadow only ({dys:+.0f}, {dxs:+.0f})"
           f"  (expect +12, 0)")
     assert bands == [0, 1, 2] and (dy, dx) == (12, 0) and (dys, dxs) == (12, 0)
+
+
+# ----------------------------------------------------------------------
+# layover magnitude: how far the echoes in a pixel have come from
+# ----------------------------------------------------------------------
+def test_magnitude_flat_ground():
+    _, r, a, _ = ground_line()
+    d, unk = own_range_displacement(r, a, pixel_m=DY)
+    print(f"  magnitude, flat ground: max {d[5:-5].max():.2f} m  (expect under 1, the bin size)")
+    assert d[5:-5].max() < 1.0 and not unk.any()
+
+
+def test_magnitude_wide_building():
+    """40 m deep, 20 m tall: the roof's echo reaches the whole strip in front."""
+    g, w, h = 1100.0, 40.0, 20.0
+    z, r, a, _ = ground_line((g, w, h))
+    d, _ = own_range_displacement(r, a, pixel_m=DY)
+    cov = own_range_line(r, a)[0]
+    y_top = np.sqrt(g**2 - 2 * H * h + h**2)
+    front = (Y > y_top + 1) & (Y < g - 1)
+    want = np.sqrt(Y[front] ** 2 + 2 * H * h - h**2) - Y[front]      # distance to the roof point
+    err = np.abs(d[front] - want)
+    shadow_end = (g + w - DY) * H / (H - h)
+    shadow = (Y > g + w + 1) & (Y < shadow_end - 1)
+    behind = Y > shadow_end + 2
+    print(f"  magnitude, wide building: front {d[front].min():.1f}-{d[front].max():.1f} m vs closed form "
+          f"{want.min():.1f}-{want.max():.1f} m (max err {err.max():.2f}); shadow {d[shadow].max():.2f}; "
+          f"behind {d[behind].max():.2f}")
+    assert err.max() < 0.6 and d[shadow].max() == 0 and d[behind].max() < 1.0
+    mag = layover_magnitude(cov, d)
+    assert (mag[cov < 1.5] == 0).all() and np.allclose(mag[front], d[front])
+
+
+def test_magnitude_narrow_building():
+    """
+    5 m deep, 20 m tall. Near the wall only the wall mixes in, so the
+    magnitude is the distance to the wall; further out the roof's echo also
+    lands, about h / tan(theta) away. On the roof, the ground echo in front
+    lands, the same distance back.
+    """
+    g, w, h = 1100.0, 5.0, 20.0
+    z, r, a, _ = ground_line((g, w, h))
+    d, _ = own_range_displacement(r, a, pixel_m=DY)
+    y_top = np.sqrt(g**2 - 2 * H * h + h**2)
+    split = np.sqrt((g + w - DY) ** 2 - 2 * H * h + h**2)           # where the roof echo starts
+    near = (Y > split + 1) & (Y < g - 1)
+    far = (Y > y_top + 1) & (Y < split - 1)
+    roof = (Y > g + 0.5) & (Y < g + w - 0.75)
+    e_near = np.abs(d[near] - (g - DY / 2 - Y[near])).max()
+    e_far = np.abs(d[far] - (np.sqrt(Y[far] ** 2 + 2 * H * h - h**2) - Y[far])).max()
+    e_roof = np.abs(d[roof] - (Y[roof] - np.sqrt(Y[roof] ** 2 - 2 * H * h + h**2))).max()
+    print(f"  magnitude, narrow building: near the wall err {e_near:.2f} m (ramp to {d[near].max():.1f} m), "
+          f"roof-echo zone err {e_far:.2f} m (~{d[far].mean():.1f} m), on the roof err {e_roof:.2f} m")
+    assert e_near < 0.6 and e_far < 0.6 and e_roof < 0.6
+
+
+def test_magnitude_grid_and_nan():
+    _, r, a, _ = ground_line((1100.0, 40.0, 20.0))
+    r[2000:2040] = np.nan
+    a[2000:2040] = np.nan
+    d, unk = own_range_displacement(r, a, nan_margin=100, pixel_m=DY)
+    assert unk[1900:2140].all() and np.isfinite(d).all()
+    R, A = np.stack([r, r], 1), np.stack([a, a], 1)
+    dg, ug = own_range_displacement_grid(R, A, axis=0, nan_margin=100, pixel_m=DY)
+    assert np.allclose(dg[:, 0], d, atol=1e-4) and (ug[:, 1] == unk).all()
+    print(f"  magnitude grid matches the line; NaN gap -> {unk.sum()} unknown pixels")
 
 
 if __name__ == "__main__":
