@@ -96,7 +96,7 @@ v1 (409 tiles, `sar/output/dataset`) is a different release and a different labe
 | [V4_CHECK.md](V4_CHECK.md) | Rule B with the AHN4 DTM, scored on every known dry pixel. The port strip misses +1.5 dB. No tiles. |
 | [V4.md](V4.md) | The same labels with clutter marked ignore. The port strip clears +1.5 dB. Fifteen strips tiled. |
 | [REPORT_v4.md](REPORT_v4.md) | Per-strip gate, ignored fraction, class shares, coverage. |
-| [MAGNITUDE.md](MAGNITUDE.md) | Layover magnitude in metres. Why a v2 tile cannot supply it. |
+| [MAGNITUDE.md](MAGNITUDE.md) | Layover magnitude in metres, the v5 tiles, and why a v2 tile cannot supply it. |
 | [sar/output/v5/REPORT_v5.md](sar/output/v5/REPORT_v5.md) | v5 rebuilt from AHN and 3DBAG. Magnitude, the footprint ignore, the comparison with v4. |
 | [TRAIN.md](TRAIN.md) | U-Net recipe: 4-channel dB, train-only norm, no vertical flip, stop on mean IoU of the rare classes. |
 
